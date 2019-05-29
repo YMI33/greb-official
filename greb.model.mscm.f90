@@ -515,7 +515,7 @@ subroutine time_loop(it, isrec, year, CO2, irec, mon, ionum, Ts1, Ta1, q1, To1, 
 
   ! ice sheet : spread and ablation
   if(log_ice_sheet == 1) then
-      !Fn_surf = Fn_surf + TF_correct(:,:,ityr)
+      Fn_surf = Fn_surf + TF_correct(:,:,ityr)
       call ice_sheet(it, ionum, irec, mon, ice_Ts0, ice_H0, ice_Ts1, ice_H1, ice_snf, ice_fus, ice_melt, dT_ocean, Fn_surf)
   end if
   ! sea ice heat capacity
@@ -562,7 +562,7 @@ subroutine tendencies(CO2, Ts1, Ta1, To1, q1, ice_cover, SW, LW_surf, Q_lat, Q_s
     if (log_ice_sheet == 1) then 
         ! ice accumulation, thickness increase by snowfall
         call ice_accumulation(ice_snf, ice_Ts1, Ta1, dq_rain, wz_vapor) 
-        Fn_surf = sw + LW_surf + LWair_down + Q_sens + Q_lat
+        Fn_surf = sw + LW_surf - LWair_down + Q_sens + Q_lat
         ! ice fusion
         call ice_fusion( ice_fus, ice_melt, ice_Ts1, ice_H1, Fn_surf, dT_ocean) 
     end if    
