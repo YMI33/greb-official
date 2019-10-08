@@ -5,9 +5,9 @@
 # m author: Tobias Bayr and Dietmar Dommenget
 
 # load module for compiler
-module load intel-fc/16.0.3.210
-module load intel-cc/16.0.3.210
-module load openmpi/1.10.2
+#module load intel-fc/16.0.3.210
+#module load intel-cc/16.0.3.210
+#module load openmpi/1.10.2
 
 # create work directory if does not already exist
 if (! -d work ) mkdir work
@@ -121,7 +121,7 @@ set CO2input=none
 ### compile GREB model (uncomment one of these three options)
 ### gfortran compiler (Linux (e.g. Ubuntu), Unix or MacBook Air)
 # gfortran -fopenmp -march=native -O3 -ffast-math -funroll-loops greb.model.mscm.f90 greb.shell.mscm.f90 -o greb.x
-# gfortran -Ofast -ffast-math -funroll-loops -fopenmp greb.model.mscm.f90 greb.shell.mscm.f90 -o greb.x
+gfortran -Ofast -ffast-math -funroll-loops -fopenmp greb.imodel.mscm.f90 -o greb.x
 # gfortran -Ofast -ffast-math -funroll-loops -fopenmp greb.model.mscm.f90 greb.shell.mscm.f90 -o greb.x
 ### ifortran compiler (Mac)
 # ifort -assume byterecl -O3 -xhost -align all -fno-alias greb.model.mscm.f90 greb.shell.mscm.f90 -o greb.x
@@ -129,7 +129,7 @@ set CO2input=none
 # g95 greb.model.mscm.f90 greb.shell.mscm.f90 -o greb.x
 # NCI RAIJIN
 # scott wales
-ifort -O3 -xHost -g -traceback -qopt-report -fp-model fast ice_sheet_test.f90 greb.shell.mscm.f90 -o ./greb.x
+# ifort -O3 -xHost -g -traceback -qopt-report -fp-model fast ice_sheet_test.f90 greb.shell.mscm.f90 -o ./greb.x
 
 
 ###################
@@ -155,7 +155,7 @@ if ( $EXP == 31 ) set SOLSCEN=${INDIR}'greb.solar.231K_hybers.corrected.bin'
 if ( $EXP == 35 ) set SOLSCEN=${INDIR}'greb.solar.obliquity.'${OBL}'.bin'
 if ( $EXP == 36 ) set SOLSCEN=${INDIR}'greb.solar.eccentricity.'${ECC}'.bin'
 # link solar forcing scenario
-ln -s $SOLSCEN solar_scenario
+# ln -s $SOLSCEN solar_scenario
 
 # link CO2 forcing for IPCC RCP scenarios
 set CO2='noco2file'
@@ -166,7 +166,7 @@ if ( $EXP == 98 ) set CO2='../input/ipcc.scenario.rcp6.forcing.txt'
 if ( $EXP == 99 ) set CO2='../input/ipcc.scenario.rcp85.forcing.txt'
 if ( $EXP == 100 ) set CO2='../input/'${CO2input}'.txt'
 # link CO2 forcing file
-ln -s $CO2 co2forcing
+# ln -s $CO2 co2forcing
 
 #  generate namelist
 cat >namelist <<EOF
@@ -231,69 +231,12 @@ if ( $EXP == 310 ) set FILENAME=exp-${EXP}.ice.sheet.${log_tsurf_ext}${log_hwind
 # calculate months of scenario run for header file
 @ MONTHS = $YEARS * 12
 
-# scenario run
-cat >../output/scenario.${FILENAME}.ctl <<EOF
-dset ^scenario.${FILENAME}.bin
-undef 9.e27
-xdef  96 linear 0 3.75
-ydef  48 linear -88.125 3.75
-zdef   1 linear 1 1
-tdef $MONTHS linear 15jan0  1mo
-vars 8
-tsurf  1 0 tsurf
-tatmos 1 0 tatmos
-tocean 1 0 tocean
-vapor  1 0 vapour
-ice    1 0 ice
-precip 1 0 precip
-eva 1 0 eva
-qcrcl 1 0 qcrcl
-endvars
-EOF
-
-cat >../output/scenario.gmean.${FILENAME}.ctl <<EOF
-dset ^scenario.gmean.${FILENAME}.bin
-undef 9.e27
-xdef 12 linear 0 3.75
-ydef  1 linear -88.125 3.75
-zdef  $YEARS linear 1 1
-tdef  1 linear 15jan0  1mo
-vars 8
-tsurf  1 0 tsurf
-tatmos 1 0 tatmos
-tocean 1 0 tocean
-vapor  1 0 vapour
-ice    1 0 ice
-precip 1 0 precip
-zdef   1 linear 1 1
-tdef $MONTHS linear 15jan0  1mo
-vars 3
-ts  1 0 ice surface temperature
-h 1 0 ice thickness
-ice 1 0 ice type
-endvars
-EOF
 
 # echo ' '
 
-if( $EXP == 310 ) then
 # rename scenario run output and move it to output folder
-mv ice_sheet_test.bin ../output/ice_sheet_test.${FILENAME}.bin
+# mv ice_scheme_test.bin ../output/ice_scheme_test.bin
 # scenario run
-cat >../output/ice_sheet_test.${FILENAME}.ctl <<EOF
-dset ^ice_sheet_test.${FILENAME}.bin
-undef 9.e27
-xdef  96 linear 0 3.75
-ydef  48 linear -88.125 3.75
-zdef   1 linear 1 1
-tdef $MONTHS linear 15jan0  1mo
-vars 3
-ts  1 0 ice surface temperature
-h 1 0 ice thickness
-ice 1 0 ice type
-endvars
-EOF
 
-endif 
 
 exit
