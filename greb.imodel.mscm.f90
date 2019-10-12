@@ -24,7 +24,7 @@ program ice_sheet_model
   nstep_end = 96*10
  
   open(301,file='ice_scheme_test.bin',ACCESS='DIRECT',FORM='UNFORMATTED', RECL=ireal*xdim*ydim)
-  ice_vx = dx/ndt_yr
+  ice_vx = 4*dx/ndt_yr
   do j = 1,xdim
   do i = 1,ydim
       iceH_ini(j,i) = exp(-dx*(j-48)**2)
@@ -65,7 +65,7 @@ program ice_sheet_model
           
           indm1=cycle_ind(adv_ind-1,xdim);indm2=cycle_ind(adv_ind-2,xdim);
           indp1=cycle_ind(adv_ind+1,xdim);indp2=cycle_ind(adv_ind+2,xdim);
-          call ppm(ice_H1(indm1,i),ice_H1(indm1,i),ice_H1(adv_ind,i),ice_H1(indp1,i),ice_H1(indp2,i),fl,df,f6)
+          call ppm(ice_H1(indm2,i),ice_H1(indm1,i),ice_H1(adv_ind,i),ice_H1(indp1,i),ice_H1(indp2,i),fl,df,f6)
           dx1 = xr-xl; dx2 = xr*xr-xl*xl; dx3 = xr*xr*xr-xl*xl*xl;
           fu(j,i) = fu(j,i) + sign(fl*dx1+0.5*df*dx2+f6*(0.5*dx2-dx3/3.0), crant_fra);
       end do
@@ -106,7 +106,7 @@ subroutine ppm(fm2, fm1, f, fp1, fp2, fl, df, f6)
   df = fr-fl;
 
   contains
-      real function mismatch(fm1, f, fp1)
+      real function mismatch(fm1, f, fp1)  ! half the slope calculation in (Colella & Woodward, 1984)
       real fm1, f, fp1, df, dfMin, dfMax
       df       = (fp1 - fm1)*0.5
       dfMin    = f - min(fm1, f , fp1)
