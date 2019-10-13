@@ -24,10 +24,12 @@ program ice_sheet_model
   nstep_end = 96*10
  
   open(301,file='ice_scheme_test.bin',ACCESS='DIRECT',FORM='UNFORMATTED', RECL=ireal*xdim*ydim)
-  ice_vx = 4*dx/ndt_yr
+  ice_vx = dx/ndt_yr
+  iceH_ini = 0 
   do j = 1,xdim
   do i = 1,ydim
       iceH_ini(j,i) = exp(-dx*(j-48)**2)
+      !iceH_ini(j,i) = sin(j*2*pi/96)+1
   end do
   end do
   ice_H1 = iceH_ini
@@ -111,10 +113,9 @@ subroutine ppm(fm2, fm1, f, fp1, fp2, fl, df, f6)
       df       = (fp1 - fm1)*0.5
       dfMin    = f - min(fm1, f , fp1)
       dfMax    = max(fm1, f, fp1) - f
-      mismatch = sign(min(abs(df)*0.5, dfMin, dfMax), df)
+      mismatch = sign(min(abs(df), 2*dfMin, 2*dfMax), df)
 
       end function mismatch
-
 end
 
 integer function cycle_ind(x,xdim)
