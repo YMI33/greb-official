@@ -1,4 +1,3 @@
-
 ! ice sheet model for GREB
 ! start 26 Sep 2019
 ! reference code : https://github.com/dongli/IAP-CGFD/blob/master/advection/ffsl/main_1d.cpp
@@ -28,8 +27,8 @@ program ice_sheet_model
   iceH_ini = 0 
   do j = 1,xdim
   do i = 1,ydim
-      iceH_ini(j,i) = exp(-dx*(j-48)**2)
-      !iceH_ini(j,i) = sin(j*2*pi/96)+1
+      !!iceH_ini(j,i) = exp(-dx*(j-48)**2)
+      iceH_ini(j,i) = sin(j*2*pi/96)+1
   end do
   end do
   ice_H1 = iceH_ini
@@ -81,13 +80,6 @@ program ice_sheet_model
   write(301,rec=irec) ice_H0
   
   ice_H1 = ice_H0
-!  if(irec<2) then 
-!     ice_H1 = ice_H0
-!  else
-!     ice_H2 = ice_H1
-!     ice_H1 = ice_H0
-!  end if
-
   end do
 
 end
@@ -110,11 +102,14 @@ subroutine ppm(fm2, fm1, f, fp1, fp2, fl, df, f6)
   contains
       real function mismatch(fm1, f, fp1)  ! half the slope calculation in (Colella & Woodward, 1984)
       real fm1, f, fp1, df, dfMin, dfMax
-      df       = (fp1 - fm1)*0.5
-      dfMin    = f - min(fm1, f , fp1)
-      dfMax    = max(fm1, f, fp1) - f
-      mismatch = sign(min(abs(df), 2*dfMin, 2*dfMax), df)
-
+      if ((fp1-f)*(f-fm1) .gt. 0) then
+          df       = (fp1 - fm1)*0.5
+          dfMin    = f - min(fm1, f , fp1)
+          dfMax    = max(fm1, f, fp1) - f
+          mismatch = sign(min(abs(df), 2*dfMin, 2*dfMax), df)
+      else
+          mismatch = 0
+      end if
       end function mismatch
 end
 
@@ -129,8 +124,4 @@ integer function cycle_ind(x,xdim)
       cycle_ind = x
   endif
 end function
-
-
-
-
 
