@@ -22,23 +22,35 @@ program ice_sheet_model
   real, dimension(xdim,ydim)     :: iceH_ini, ice_H1, ice_H0, diceH_crcl
   real, dimension(xdim,ydim+1)   :: ice_vx, ice_vy, fu, fv
 
-  nstep_end = 96*10
+  nstep_end = 10*96
  
   open(301,file='ice_scheme_test.bin',ACCESS='DIRECT',FORM='UNFORMATTED', RECL=ireal*xdim*ydim)
-  ice_vx   = dx/ndt_yr
-  ice_vy   = 0.
+  ice_vx   = 0.
+  do i = 1,ydim+1
+      do j = 1,xdim/4
+         ice_vy(j,i)   = -dy/ndt_yr
+      end do
+      do j = xdim/4+1,xdim*3/4
+         ice_vy(j,i)   = dy/ndt_yr
+      end do
+      do j = 3*xdim/4+1,xdim
+         ice_vy(j,i)   = -dy/ndt_yr
+      end do
+  end do
   iceH_ini = 0. 
   do j = 1,xdim
       do i = 1,ydim
-          iceH_ini(j,i) = exp(-dx*(j-48)**2)
+          iceH_ini(j,i) = exp(-dy*(i-24)**2-dx*(j-48)**2)
           !iceH_ini(j,i) = sin(j*2*pi/96)+1
       end do
   end do
   ice_H1 = iceH_ini
+  north_pole = 0; south_pole = 0
   do j = 1,xdim
       north_pole = north_pole + ice_H1(j,ydim)/xdim
       south_pole = south_pole + ice_H1(j,1)/xdim
   end do
+
 
   do irec = 1,nstep_end
   fu     = 0.
@@ -83,22 +95,24 @@ program ice_sheet_model
           cranty     = ice_vy(j,i)*dt/dy
           crant_inty = int(cranty)
           crant_fray = cranty - float(crant_inty)
-          
+
           ! integer flux
           if(crant_inty .ge. 1) then
               do k = 1,crant_inty
-                 fv(j,i) = fv(j,i) + ice_H1(j,cycle_ind(i-k,ydim)) 
+                 call meridion_shift(ice_H1, north_pole, south_pole, j, i-k, iceH_ind)
+                 fv(j,i) = fv(j,i) + iceH_ind
               end do
           else if(crant_inty .le. -1) then
               do k = 1,-crant_inty
-                 fv(j,i) = fv(j,i) - ice_H1(j,cycle_ind(i-1+k,ydim))
+                 call meridion_shift(ice_H1, north_pole, south_pole, j, i-1+k, iceH_ind)
+                 fv(j,i) = fv(j,i) - iceH_ind
               end do
           endif
           ! fraction fluy
           if(cranty > 0) then
-              adv_ind = j-1-crant_inty
+              adv_ind = i-1-crant_inty
           else
-              adv_ind = j-crant_inty
+              adv_ind = i-crant_inty
           end if
           if(crant_fray > 0) then
               yl = 1-crant_fray; yr = 1
@@ -109,7 +123,7 @@ program ice_sheet_model
           if ((adv_ind>ydim-2).or.(adv_ind<2)) then
               call meridion_shift(ice_H1, north_pole, south_pole, j, adv_ind-2, iceH_indm2)
               call meridion_shift(ice_H1, north_pole, south_pole, j, adv_ind-1, iceH_indm1)
-              call meridion_shift(ice_H1, north_pole, south_pole, j, adv_ind  , iceH_ind  )
+              call meridion_shift(ice_H1, north_pole, south_pole, j, adv_ind         , iceH_ind  )
               call meridion_shift(ice_H1, north_pole, south_pole, j, adv_ind+1, iceH_indp1)
               call meridion_shift(ice_H1, north_pole, south_pole, j, adv_ind+2, iceH_indp2)
           else
@@ -127,22 +141,24 @@ program ice_sheet_model
           cranty     = ice_vy(j,i)*dt/dy
           crant_inty = int(cranty)
           crant_fray = cranty - float(crant_inty)
-          
+
           ! integer flux
           if(crant_inty .ge. 1) then
               do k = 1,crant_inty
-                 fv(j,i) = fv(j,i) + ice_H1(j,cycle_ind(i-k,ydim)) 
+                 call meridion_shift(ice_H1, north_pole, south_pole, j, i-k, iceH_ind)
+                 fv(j,i) = fv(j,i) + iceH_ind
               end do
           else if(crant_inty .le. -1) then
               do k = 1,-crant_inty
-                 fv(j,i) = fv(j,i) - ice_H1(j,cycle_ind(i-1+k,ydim))
+                 call meridion_shift(ice_H1, north_pole, south_pole, j, i-1+k, iceH_ind)
+                 fv(j,i) = fv(j,i) - iceH_ind
               end do
           endif
           ! fraction fluy
           if(cranty > 0) then
-              adv_ind = j-1-crant_inty
+              adv_ind = i-1-crant_inty
           else
-              adv_ind = j-crant_inty
+              adv_ind = i-crant_inty
           end if
           if(crant_fray > 0) then
               yl = 1-crant_fray; yr = 1
@@ -153,7 +169,7 @@ program ice_sheet_model
           if ((adv_ind>ydim-2).or.(adv_ind<2)) then
               call meridion_shift(ice_H1, north_pole, south_pole, j, adv_ind-2, iceH_indm2)
               call meridion_shift(ice_H1, north_pole, south_pole, j, adv_ind-1, iceH_indm1)
-              call meridion_shift(ice_H1, north_pole, south_pole, j, adv_ind  , iceH_ind  )
+              call meridion_shift(ice_H1, north_pole, south_pole, j, adv_ind         , iceH_ind  )
               call meridion_shift(ice_H1, north_pole, south_pole, j, adv_ind+1, iceH_indp1)
               call meridion_shift(ice_H1, north_pole, south_pole, j, adv_ind+2, iceH_indp2)
           else
@@ -165,13 +181,12 @@ program ice_sheet_model
           fv(j,i) = fv(j,i) + sign(fl*dy1+0.5*df*dy2+f6*(0.5*dy2-dy3/3.0), crant_fray);         
   end do
 
-
-  do i = 1,ydim
-      do j = 1,xdim
+  do j = 1,xdim
+      do i = 1,ydim
           ice_H0(j,i) = ice_H1(j,i) - (fu(cycle_ind(j+1,xdim),i)-fu(j,i)) - (fv(j,i+1)-fv(j,i))
-          north_pole = north_pole - fv(j, ydim+1)
-          south_pole = south_pole - fv(j, 1)
       end do   
+      north_pole = north_pole + fv(j, ydim+1)/xdim
+      south_pole = south_pole - fv(j, 1)/xdim
   end do
 
   write(301,rec=irec) ice_H0
@@ -187,12 +202,12 @@ subroutine meridion_shift(ice_H1, north_pole, south_pole, ind_zonal, ind_merid, 
  integer                    :: ind_zonal, ind_merid
  real                       :: north_pole, south_pole, ice_nounb
  real, dimension(xdim,ydim) :: ice_H1
- if (ind_merid.eq.ydim) then
+ if     (ind_merid.eq.ydim+1) then
       ice_nounb = north_pole
  else if(ind_merid.eq.0) then
       ice_nounb = south_pole
  else if(ind_merid.gt.ydim+1) then
-      ice_nounb = ice_H1(cycle_ind(ind_zonal+xdim/2,xdim),2*ydim+1-ind_merid)
+      ice_nounb = ice_H1(cycle_ind(ind_zonal+xdim/2,xdim),2*ydim+2-ind_merid)
  else if(ind_merid.lt.0) then
       ice_nounb = ice_H1(cycle_ind(ind_zonal+xdim/2,xdim), -ind_merid)
  else 
