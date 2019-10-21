@@ -17,10 +17,18 @@ program ice_sheet_model
   integer            :: crant_intx, crant_inty, adv_ind 
   real               :: crantx, crant_frax, cranty, crant_fray 
   real,parameter     :: pi        = 3.1416 
-  real,parameter     :: dx        = 2*pi/(xdim)
-  real,parameter     :: dy        = pi/(ydim)
   real, dimension(xdim,ydim)     :: iceH_ini, ice_H1, ice_H0, diceH_crcl
   real, dimension(xdim,ydim+1)   :: ice_vx, ice_vy, fu, fv
+  
+  real, dimension(ydim)      :: lat, dxlat, ccx
+  real    :: deg, dx, dy, dyy
+  real, parameter    :: dlon      = 360./xdim         ! linear increment in lon
+  real, parameter    :: dlat      = 180./ydim         ! linear increment in lat
+  integer, dimension(ydim)   :: ilat = (/(i,i=1,ydim)/)
+
+  deg = 2.*pi*6.371e6/360.;   ! length of 1deg latitude [m]
+  dx = dlon; dy=dlat; dyy=dy*deg
+  lat = dlat*ilat-dlat/2.-90.;  dxlat=dx*deg*cos(2.*pi/360.*lat)
 
   nstep_end = 10*96
  
@@ -40,7 +48,7 @@ program ice_sheet_model
   iceH_ini = 0. 
   do j = 1,xdim
       do i = 1,ydim
-          iceH_ini(j,i) = exp(-dy*(i-24)**2-dx*(j-48)**2)
+          iceH_ini(j,i) = exp(-((i-24)/10.)**2-((j-48)/10.)**2)
           !iceH_ini(j,i) = sin(j*2*pi/96)+1
       end do
   end do
@@ -123,7 +131,7 @@ program ice_sheet_model
           if ((adv_ind>ydim-2).or.(adv_ind<2)) then
               call meridion_shift(ice_H1, north_pole, south_pole, j, adv_ind-2, iceH_indm2)
               call meridion_shift(ice_H1, north_pole, south_pole, j, adv_ind-1, iceH_indm1)
-              call meridion_shift(ice_H1, north_pole, south_pole, j, adv_ind         , iceH_ind  )
+              call meridion_shift(ice_H1, north_pole, south_pole, j, adv_ind  , iceH_ind  )
               call meridion_shift(ice_H1, north_pole, south_pole, j, adv_ind+1, iceH_indp1)
               call meridion_shift(ice_H1, north_pole, south_pole, j, adv_ind+2, iceH_indp2)
           else
@@ -169,7 +177,7 @@ program ice_sheet_model
           if ((adv_ind>ydim-2).or.(adv_ind<2)) then
               call meridion_shift(ice_H1, north_pole, south_pole, j, adv_ind-2, iceH_indm2)
               call meridion_shift(ice_H1, north_pole, south_pole, j, adv_ind-1, iceH_indm1)
-              call meridion_shift(ice_H1, north_pole, south_pole, j, adv_ind         , iceH_ind  )
+              call meridion_shift(ice_H1, north_pole, south_pole, j, adv_ind  , iceH_ind  )
               call meridion_shift(ice_H1, north_pole, south_pole, j, adv_ind+1, iceH_indp1)
               call meridion_shift(ice_H1, north_pole, south_pole, j, adv_ind+2, iceH_indp2)
           else
