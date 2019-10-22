@@ -13,7 +13,7 @@ program ice_sheet_model
   integer            :: i, j, k, irec, nstep_end 
   real               :: iceH_indp2, iceH_indp1, iceH_ind, iceH_indm1, iceH_indm2 
   real,parameter     :: pi        = 3.1416 
-  real, dimension(xdim,ydim)     :: iceH_ini, ice_H1, ice_H0, diceH_crcl
+  real, dimension(xdim,ydim)     :: iceH_ini, ice_H1, ice_H0, ice_Hx, ice_Hy
   real, dimension(xdim,ydim+1)   :: ice_vx, ice_vy, crantx, cranty, fu, fv
   real, dimension(ydim)      :: lat, dxlat, ccx
   real    :: deg, dx, dy, dyy
@@ -29,7 +29,13 @@ program ice_sheet_model
   nstep_end = 10*96
  
   open(301,file='ice_scheme_test.bin',ACCESS='DIRECT',FORM='UNFORMATTED', RECL=ireal*xdim*ydim)
-  ice_vx   = 0.
+  do i = 1,ydim
+      do j = 1,xdim
+          ice_vx(j,i) = dxlat(i)/ndt_yr
+          ice_vx(j,i) = 0 
+      end do
+  end do
+!  ice_vy   = 0.
   do i = 1,ydim+1
       do j = 1,xdim/4
          ice_vy(j,i)   = -dyy/ndt_yr
@@ -60,16 +66,18 @@ program ice_sheet_model
         do i = 1,ydim
             crantx(j,i) = ice_vx(j,i)*dt/dxlat(i)
             cranty(j,i) = ice_vy(j,i)*dt/dyy
+            ice_Hx(j,i) = ice_H1(j,i)
+            ice_Hy(j,i) = ice_H1(j,i)*cos(lat(i)/180*pi)
         end do
         i = ydim+1
        cranty(j,i) = ice_vy(j,i)*dt/dyy
   end do
 
-  call flux_operator(ice_H1, ice_H1, crantx, cranty, fu, fv)
+  call flux_operator(ice_Hx, ice_Hy, crantx, cranty, fu, fv)
 
   do j = 1,xdim
       do i = 1,ydim
-          ice_H0(j,i) = ice_H1(j,i) - (fu(cycle_ind(j+1,xdim),i)-fu(j,i)) - (fv(j,i+1)-fv(j,i))
+          ice_H0(j,i) = ice_H1(j,i) - (fu(cycle_ind(j+1,xdim),i)-fu(j,i)) - (fv(j,i+1)-fv(j,i))/cos(lat(i)/180*pi)
       end do   
   end do
 
