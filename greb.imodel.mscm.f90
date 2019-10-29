@@ -29,24 +29,6 @@ program ice_sheet_model
   nstep_end = 10*96
  
   open(301,file='ice_scheme_test.bin',ACCESS='DIRECT',FORM='UNFORMATTED', RECL=ireal*xdim*ydim)
-  do i = 1,ydim
-      do j = 1,xdim
-          ice_vx(j,i) = dxlat(i)/ndt_yr
-          ice_vx(j,i) = 0 
-      end do
-  end do
-!  ice_vy   = 0.
-  do i = 1,ydim+1
-      do j = 1,xdim/4
-         ice_vy(j,i)   = -dyy/ndt_yr
-      end do
-      do j = xdim/4+1,xdim*3/4
-         ice_vy(j,i)   = dyy/ndt_yr
-      end do
-      do j = 3*xdim/4+1,xdim
-         ice_vy(j,i)   = -dyy/ndt_yr
-      end do
-  end do
   iceH_ini = 0. 
   do j = 1,xdim
       do i = 1,ydim
@@ -55,6 +37,10 @@ program ice_sheet_model
       end do
   end do
   ice_H1 = iceH_ini
+  ice_vx = 0.
+  ice_vy = 0.
+
+  call ice_velocity(ice_H1,ice_T1, dyy, dxlat, ice_vx, ice_vy)
 
   do irec = 1,nstep_end
   
@@ -86,6 +72,114 @@ program ice_sheet_model
   ice_H1 = ice_H0
   end do
 end
+
+subroutine ice_sheet_velocity(ice_H1,ice_T1, dyy, dxlat, vx, vy, zeta)
+  implicit none
+  integer, external  :: cycle_ind
+  integer, parameter :: xdim = 96, ydim = 48          ! field dimensions
+  integer            :: i, j, k1, k2, k3, ind_zonal_real
+  real               :: iceH_jm1, iceH_im1, iceH_c
+  real               :: sigma, sigmajm, sigmaim, 
+  real               :: T_Gauss, T_Gaussjm, T_Gaussim, coef, coef_jm, coef_im
+  real               :: cons_int, cons_intjm, cons_intim, term_poly 
+  real               :: deg, dx, dy, dyy, zh, zr, cons_int
+  real,parameter     :: pi        = 3.1416 
+  real,parameter     ::  rho_ice   = 910.
+  real,dimension(4)  :: coef_poly = (/1,3,3,1/)
+  real,dimension(4)  :: zeta = (/-1,-1./sqrt(3)/,1/sqrt(3),1)
+  real,dimension(3,4):: gs_node   = (/-0.7746,0.0000,0.7746/,/-0.8228,-0.1811,0.5753/,/-0.8540,-0.3060, 0.4100/,/-0.8758, -0.3976, 0.2735/)
+  real,dimension(3,4):: gs_weight = (/ 0.5556,0.8889,0.5556/,/0.8037,0.9170,0.2793/,/1.2571,1.1700,0.2396/,/2.063, 1.6736, 0.2637/)
+  real, dimension(xdim,ydim)     :: iceH_ini, ice_H1, ice_H0, ice_Hx, ice_Hy
+  real, dimension(xdim,ydim,4)   :: iceH_T1, iceH_Tcoef
+  real, dimension(xdim,ydim+1,4) :: ice_vx, ice_vy, dHdx_c, dHdy_c 
+  real, dimension(ydim)          :: lat, dxlat, ccx
+  integer, dimension(ydim)       :: ilat = (/(i,i=1,ydim)/)
+  zh = (zeta+1)/2
+  zr = 1-zh
+  do i = 1,ydim+1
+      do j = 1,xdim
+          ! effective stress horizontal part, vertical part is left for intergal
+          sigma      = sigma_horizon(ice_H1, j  , i, dxlat, dyy)
+          sigmajm    = sigma_horizon(ice_H1, j-1, i, dxlat, dyy)
+          sigmaim    = sigma_horizon(ice_H1, j, i-1, dxlat, dyy)
+          ! vertical intergal part
+          cons_int = 0.; cons_intjm = 0.; cons_intim = 0.
+          do k1 = 1,4
+              do k2 = 1,3
+                  ! temperature at Gauss node
+                  T_Gauss = 0.; T_Gaussjm = 0.; T_Gaussim = 0.
+                  do k3 = 1,4
+                      call meridion_shift(iceH_Tcoef(:,:,k3), j, i, coef  )
+                      T_Gauss   = T_Gauss + iceH_Tcoef(j,i,k3)*gs_node(k1,k2)**k3
+                      ind_zonal_real = cycle_ind(j-1,xdim) 
+                      call meridion_shift(iceH_Tcoef(:,:,k3), ind_zonal_real, i, coef_jm)
+                      T_Gaussjm = T_Gaussjm + coef_jm*gs_node(k1,k2)**k3
+                      call meridion_shift(iceH_Tcoef(:,:,k3), j, i-1, coef_im)
+                      T_Gaussim = T_Gaussim + coef_im*gs_node(k1,k2)**k3
+                  end do
+                  ! constitutive equation
+                  term_poly   = coef_poly(k1)*(zh*ice_H1(j,i)/2.)**4*(2.*zr/zh)**(4-k1)*gs_weight(k1,k2) 
+                  cons_int    = cons_int   + constitutive_equation(T_Gauss  )*term_poly*sigma**2
+                  cons_intjm  = cons_intjm + constitutive_equation(T_Gaussjm)*term_poly*sigmajm**2
+                  cons_intim  = cons_intim + constitutive_equation(T_Gaussim)*term_poly*sigmaim**2
+              end do
+          end do
+          call meridion_shift(ice_H1, j, i, iceH_c)
+          call meridion_shift(ice_H1, j, i-1, iceH_im1)
+          ind_zonal_real = cycle_ind(j-1,xdim) 
+          call meridion_shift(ice_H1, ind_zonal_real, i, iceH_jm1)
+          dHdx = (iceH_c - iceH_jm1)/dx
+          dHdy = (iceH_c - iceH_im1)/dyy
+          vx(j,i)  = -2.*rho_ice*g*dHdx*(cons_int+cons_intjm)/2.
+          vy(j,i)  = -2.*rho_ice*g*dHdy*(cons_int+cons_intim)/2.
+      end do
+  end do
+
+  contains 
+       real function consititutive_equation(T_Gauss)
+       implicit none
+       real,parameter     :: R_air     = 8.314
+       if(T_Gauss > 263.15) then
+           constitutive_equation  =  3.985e-13*exp(-6e4/R_air/T_Gauss)
+       else
+           constitutive_equation  =  1.96e3*exp(-1.39e5/R_air/T_Gauss)
+       end if
+       end function constitutive_equation
+
+       real function sigma_horizon(ice_H1, ind_zonal, ind_merid, dxlat, dy)
+       implicit none
+       integer, external  :: cycle_ind
+       integer, parameter :: xdim = 96, ydim = 48          ! field dimensions
+       integer            :: ind_zonal, ind_merid, ind_zonal_real
+       real,parameter     :: g         = 9.8
+       real,parameter     :: rho_ice   = 910.
+       real               :: iceH_jp1, iceH_jm1, iceH_ip1, iceH_im1
+       real               :: dx, dy
+       real, dimension(ydim)      :: dxlat
+       real, dimension(xdim,ydim) :: ice_H1
+       ! zonal
+       ind_zonal_real = cycle_ind(ind_zonal-1,xdim)
+       call meridion_shift(ice_H1, ind_zonal_real, ind_merid, iceH_jm1)
+       ind_zonal_real = cycle_ind(ind_zonal+1,xdim)
+       call meridion_shift(ice_H1, ind_zonal_real, ind_merid, iceH_jp1)
+       ! meridianal
+       ind_zonal_real = cycle_ind(ind_zonal,xdim)
+       call meridion_shift(ice_H1, ind_zonal_fix, ind_merid-1, iceH_im1)
+       call meridion_shift(ice_H1, ind_zonal_fix, ind_merid+1, iceH_ip1)
+       if   (ind_merid.gt.ydim) then
+            dx = dxlat(2*ydim+1-ind_merid)
+       else if(ind_merid.lt.1 ) then
+            dx = dxlat(1-ind_merid)
+       else 
+            dx = dxlat(ind_merid)
+       end if
+       dHdx_c = (iceH_jp1 - iceH_jm1)/(2*dx)
+       dHdy_c = (iceH_ip1 - iceH_im1)/(2*dy)
+       sigma_horizon  = rho_ice*g*sqrt(dHdx_c**2+dHdy_c**2)
+       end function sigma_horizon
+
+end subroutine
+
 
 subroutine flux_operator(ice_Hx, ice_Hy, crantx, cranty, fu, fv)
   implicit none
