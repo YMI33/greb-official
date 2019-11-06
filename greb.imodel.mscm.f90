@@ -3,19 +3,24 @@
 ! reference code : https://github.com/dongli/IAP-CGFD/blob/master/advection/ffsl/main_2d.cpp
 program ice_sheet_model
   implicit none
+  character(len=100) :: filename
   integer, external  :: cycle_ind
   integer, parameter :: xdim = 96, ydim = 48          ! field dimensions
   integer, parameter :: ndt_days  = 24*3600           ! number of timesteps per day
   integer, parameter :: ndays_yr  = 365               ! number of days per year
   integer, parameter :: ndt_yr    = ndays_yr*ndt_days        ! number of timesteps per day
+  real,parameter     :: gs_layer = 1./sqrt(3.)
+  real,dimension(4)  :: zeta = (/-1.,-gs_layer,gs_layer,1./)
   real               :: dt        = ndt_yr/2           ! time step [s]
   integer            :: ireal     = 4
   integer            :: i, j, k, irec, nstep_end 
   real               :: iceH_indp2, iceH_indp1, iceH_ind, iceH_indm1, iceH_indm2 
   real,parameter     :: pi        = 3.1416 
-  real, dimension(xdim,ydim)     :: iceH_ini, ice_H1, ice_H0, ice_Hx, ice_Hy
-  real, dimension(xdim,ydim+1)   :: ice_vx, ice_vy, crantx, cranty, fu, fv
-  real, dimension(ydim)      :: lat, dxlat, ccx
+  real, dimension(xdim,ydim)     :: iceH_ini, ice_H1, ice_H0, ice_Hx, ice_Hy, ice_zs
+  real, dimension(xdim,ydim+1,4) :: ice_vx, ice_vy
+  real, dimension(xdim,ydim+1)   :: crantx, cranty, fu, fv
+  real, dimension(xdim,ydim,4)   :: ice_T1, ice_T0
+  real, dimension(ydim)      :: lat, dxlat
   real    :: deg, dx, dy, dyy
   real, parameter    :: dlon      = 360./xdim         ! linear increment in lon
   real, parameter    :: dlat      = 180./ydim         ! linear increment in lat
@@ -29,18 +34,27 @@ program ice_sheet_model
   nstep_end = 10*96
  
   open(301,file='ice_scheme_test.bin',ACCESS='DIRECT',FORM='UNFORMATTED', RECL=ireal*xdim*ydim)
-  iceH_ini = 0. 
-  do j = 1,xdim
-      do i = 1,ydim
-          iceH_ini(j,i) = exp(-((i-24)/10.)**2-((j-48)/10.)**2)
-          !iceH_ini(j,i) = sin(j*2*pi/96)+1
-      end do
-  end do
+  filename = '/Users/zxie0012/Documents/ice_sheet_model/model/my_ice_model/sico_out/zs.bin'
+  open(11,file=filename,ACCESS='DIRECT',FORM='UNFORMATTED', RECL=ireal*xdim*ydim)
+  read(11,rec=1) ice_zs
+  filename = '/Users/zxie0012/Documents/ice_sheet_model/model/my_ice_model/sico_out/thk.bin'
+  open(12,file=filename,ACCESS='DIRECT',FORM='UNFORMATTED', RECL=ireal*xdim*ydim)
+  read(12,rec=1) ice_H1
+  filename = '/Users/zxie0012/Documents/ice_sheet_model/model/my_ice_model/sico_out/vx.bin'
+  open(13,file=filename,ACCESS='DIRECT',FORM='UNFORMATTED', RECL=ireal*xdim*ydim*4)
+  read(13,rec=1) ice_vx
+  filename = '/Users/zxie0012/Documents/ice_sheet_model/model/my_ice_model/sico_out/vy.bin'
+  open(14,file=filename,ACCESS='DIRECT',FORM='UNFORMATTED', RECL=ireal*xdim*ydim*4)
+  read(14,rec=1) ice_vy
+  filename = '/Users/zxie0012/Documents/ice_sheet_model/model/my_ice_model/sico_out/temp.bin'
+  open(14,file=filename,ACCESS='DIRECT',FORM='UNFORMATTED', RECL=ireal*xdim*ydim*4)
+  read(14,rec=1) ice_T1
   ice_H1 = iceH_ini
   ice_vx = 0.
   ice_vy = 0.
-
-  call ice_velocity(ice_H1,ice_T1, dyy, dxlat, ice_vx, ice_vy)
+  k = 2
+  call ice_sheet_velocity(ice_H1,ice_T1, dyy, dxlat, ice_vx(:,:,k), ice_vy(:,:,k), zeta(k))
+  stop
 
   do irec = 1,nstep_end
   
@@ -50,13 +64,13 @@ program ice_sheet_model
 
   do j = 1,xdim
         do i = 1,ydim
-            crantx(j,i) = ice_vx(j,i)*dt/dxlat(i)
-            cranty(j,i) = ice_vy(j,i)*dt/dyy
+            crantx(j,i) = ice_vx(j,i,k)*dt/dxlat(i)
+            cranty(j,i) = ice_vy(j,i,k)*dt/dyy
             ice_Hx(j,i) = ice_H1(j,i)
             ice_Hy(j,i) = ice_H1(j,i)*cos(lat(i)/180*pi)
         end do
         i = ydim+1
-       cranty(j,i) = ice_vy(j,i)*dt/dyy
+       cranty(j,i) = ice_vy(j,i,k)*dt/dyy
   end do
 
   call flux_operator(ice_Hx, ice_Hy, crantx, cranty, fu, fv)
@@ -66,7 +80,7 @@ program ice_sheet_model
           ice_H0(j,i) = ice_H1(j,i) - (fu(cycle_ind(j+1,xdim),i)-fu(j,i)) - (fv(j,i+1)-fv(j,i))/cos(lat(i)/180*pi)
       end do   
   end do
-
+  
   write(301,rec=irec) ice_H0
   
   ice_H1 = ice_H0
@@ -77,21 +91,28 @@ subroutine ice_sheet_velocity(ice_H1,ice_T1, dyy, dxlat, vx, vy, zeta)
   implicit none
   integer, external  :: cycle_ind
   integer, parameter :: xdim = 96, ydim = 48          ! field dimensions
+  real,parameter     :: g         = 9.8
   integer            :: i, j, k1, k2, k3, ind_zonal_real
   real               :: iceH_jm1, iceH_im1, iceH_c
-  real               :: sigma, sigmajm, sigmaim, 
+  real               :: sigma, sigmajm, sigmaim
   real               :: T_Gauss, T_Gaussjm, T_Gaussim, coef, coef_jm, coef_im
   real               :: cons_int, cons_intjm, cons_intim, term_poly 
-  real               :: deg, dx, dy, dyy, zh, zr, cons_int
+  real               ::  dHdx, dHdy, dHdx_c, dHdy_c 
+  real               :: deg, dx, dy, dyy, zeta, zh, zr
   real,parameter     :: pi        = 3.1416 
-  real,parameter     ::  rho_ice   = 910.
+  real,parameter     :: rho_ice   = 910.
   real,dimension(4)  :: coef_poly = (/1,3,3,1/)
-  real,dimension(4)  :: zeta = (/-1,-1./sqrt(3)/,1/sqrt(3),1)
-  real,dimension(3,4):: gs_node   = (/-0.7746,0.0000,0.7746/,/-0.8228,-0.1811,0.5753/,/-0.8540,-0.3060, 0.4100/,/-0.8758, -0.3976, 0.2735/)
-  real,dimension(3,4):: gs_weight = (/ 0.5556,0.8889,0.5556/,/0.8037,0.9170,0.2793/,/1.2571,1.1700,0.2396/,/2.063, 1.6736, 0.2637/)
-  real, dimension(xdim,ydim)     :: iceH_ini, ice_H1, ice_H0, ice_Hx, ice_Hy
-  real, dimension(xdim,ydim,4)   :: iceH_T1, iceH_Tcoef
-  real, dimension(xdim,ydim+1,4) :: ice_vx, ice_vy, dHdx_c, dHdy_c 
+  real,dimension(3,4):: gs_node   = reshape((/-0.7746,0.0000,0.7746,&
+                                     -0.8228,-0.1811,0.5753,&
+                                     -0.8540,-0.3060, 0.4100,&
+                                     -0.8758, -0.3976, 0.2735/), (/3,4/))
+  real,dimension(3,4):: gs_weight = reshape((/ 0.5556,0.8889,0.5556,&
+                                               0.8037,0.9170,0.2793,&
+                                               1.2571,1.1700,0.2396,&
+                                               2.063, 1.6736, 0.2637/),(/3,4/))
+  real, dimension(xdim,ydim)     :: iceH_ini, ice_H1, ice_H0, ice_Hx, ice_Hy, ice_zs
+  real, dimension(xdim,ydim,4)   :: ice_T1, iceH_Tcoef
+  real, dimension(xdim,ydim+1)   :: vx, vy
   real, dimension(ydim)          :: lat, dxlat, ccx
   integer, dimension(ydim)       :: ilat = (/(i,i=1,ydim)/)
   zh = (zeta+1)/2
@@ -99,9 +120,9 @@ subroutine ice_sheet_velocity(ice_H1,ice_T1, dyy, dxlat, vx, vy, zeta)
   do i = 1,ydim+1
       do j = 1,xdim
           ! effective stress horizontal part, vertical part is left for intergal
-          sigma      = sigma_horizon(ice_H1, j  , i, dxlat, dyy)
-          sigmajm    = sigma_horizon(ice_H1, j-1, i, dxlat, dyy)
-          sigmaim    = sigma_horizon(ice_H1, j, i-1, dxlat, dyy)
+          sigma      = sigma_horizon(ice_zs, j  , i, dxlat, dyy)
+          sigmajm    = sigma_horizon(ice_zs, j-1, i, dxlat, dyy)
+          sigmaim    = sigma_horizon(ice_zs, j, i-1, dxlat, dyy)
           ! vertical intergal part
           cons_int = 0.; cons_intjm = 0.; cons_intim = 0.
           do k1 = 1,4
@@ -110,24 +131,25 @@ subroutine ice_sheet_velocity(ice_H1,ice_T1, dyy, dxlat, vx, vy, zeta)
                   T_Gauss = 0.; T_Gaussjm = 0.; T_Gaussim = 0.
                   do k3 = 1,4
                       call meridion_shift(iceH_Tcoef(:,:,k3), j, i, coef  )
-                      T_Gauss   = T_Gauss + iceH_Tcoef(j,i,k3)*gs_node(k1,k2)**k3
+                      T_Gauss   = T_Gauss + coef*gs_node(k2,k1)**k3
                       ind_zonal_real = cycle_ind(j-1,xdim) 
                       call meridion_shift(iceH_Tcoef(:,:,k3), ind_zonal_real, i, coef_jm)
-                      T_Gaussjm = T_Gaussjm + coef_jm*gs_node(k1,k2)**k3
+                      T_Gaussjm = T_Gaussjm + coef_jm*gs_node(k2,k1)**k3
                       call meridion_shift(iceH_Tcoef(:,:,k3), j, i-1, coef_im)
-                      T_Gaussim = T_Gaussim + coef_im*gs_node(k1,k2)**k3
+                      T_Gaussim = T_Gaussim + coef_im*gs_node(k2,k1)**k3
                   end do
                   ! constitutive equation
-                  term_poly   = coef_poly(k1)*(zh*ice_H1(j,i)/2.)**4*(2.*zr/zh)**(4-k1)*gs_weight(k1,k2) 
+                  call meridion_shift(ice_H1, j, i, iceH_c)
+                  term_poly   = coef_poly(k1)*(zh*iceH_c/2.)**4*(2.*zr/zh)**(4-k1)*gs_weight(k2,k1) 
                   cons_int    = cons_int   + constitutive_equation(T_Gauss  )*term_poly*sigma**2
                   cons_intjm  = cons_intjm + constitutive_equation(T_Gaussjm)*term_poly*sigmajm**2
                   cons_intim  = cons_intim + constitutive_equation(T_Gaussim)*term_poly*sigmaim**2
               end do
           end do
-          call meridion_shift(ice_H1, j, i, iceH_c)
-          call meridion_shift(ice_H1, j, i-1, iceH_im1)
+          call meridion_shift(ice_zs, j, i, iceH_c)
+          call meridion_shift(ice_zs, j, i-1, iceH_im1)
           ind_zonal_real = cycle_ind(j-1,xdim) 
-          call meridion_shift(ice_H1, ind_zonal_real, i, iceH_jm1)
+          call meridion_shift(ice_zs, ind_zonal_real, i, iceH_jm1)
           dHdx = (iceH_c - iceH_jm1)/dx
           dHdy = (iceH_c - iceH_im1)/dyy
           vx(j,i)  = -2.*rho_ice*g*dHdx*(cons_int+cons_intjm)/2.
@@ -136,17 +158,18 @@ subroutine ice_sheet_velocity(ice_H1,ice_T1, dyy, dxlat, vx, vy, zeta)
   end do
 
   contains 
-       real function consititutive_equation(T_Gauss)
+       real function constitutive_equation(T_Gauss)
        implicit none
        real,parameter     :: R_air     = 8.314
+       real               :: T_Gauss
        if(T_Gauss > 263.15) then
-           constitutive_equation  =  3.985e-13*exp(-6e4/R_air/T_Gauss)
+           constitutive_equation =  3.985e-13*exp(-6e4/R_air/T_Gauss)*3
        else
-           constitutive_equation  =  1.96e3*exp(-1.39e5/R_air/T_Gauss)
+           constitutive_equation =  1.96e3*exp(-1.39e5/R_air/T_Gauss)*3
        end if
-       end function constitutive_equation
+       end function 
 
-       real function sigma_horizon(ice_H1, ind_zonal, ind_merid, dxlat, dy)
+       real function sigma_horizon(ice_zs, ind_zonal, ind_merid, dxlat, dy)
        implicit none
        integer, external  :: cycle_ind
        integer, parameter :: xdim = 96, ydim = 48          ! field dimensions
@@ -154,18 +177,19 @@ subroutine ice_sheet_velocity(ice_H1,ice_T1, dyy, dxlat, vx, vy, zeta)
        real,parameter     :: g         = 9.8
        real,parameter     :: rho_ice   = 910.
        real               :: iceH_jp1, iceH_jm1, iceH_ip1, iceH_im1
+       real               :: dHdx_c, dHdy_c
        real               :: dx, dy
        real, dimension(ydim)      :: dxlat
-       real, dimension(xdim,ydim) :: ice_H1
+       real, dimension(xdim,ydim) :: ice_zs
        ! zonal
        ind_zonal_real = cycle_ind(ind_zonal-1,xdim)
-       call meridion_shift(ice_H1, ind_zonal_real, ind_merid, iceH_jm1)
+       call meridion_shift(ice_zs, ind_zonal_real, ind_merid, iceH_jm1)
        ind_zonal_real = cycle_ind(ind_zonal+1,xdim)
-       call meridion_shift(ice_H1, ind_zonal_real, ind_merid, iceH_jp1)
+       call meridion_shift(ice_zs, ind_zonal_real, ind_merid, iceH_jp1)
        ! meridianal
        ind_zonal_real = cycle_ind(ind_zonal,xdim)
-       call meridion_shift(ice_H1, ind_zonal_fix, ind_merid-1, iceH_im1)
-       call meridion_shift(ice_H1, ind_zonal_fix, ind_merid+1, iceH_ip1)
+       call meridion_shift(ice_zs, ind_zonal_real, ind_merid-1, iceH_im1)
+       call meridion_shift(ice_zs, ind_zonal_real, ind_merid+1, iceH_ip1)
        if   (ind_merid.gt.ydim) then
             dx = dxlat(2*ydim+1-ind_merid)
        else if(ind_merid.lt.1 ) then
@@ -176,7 +200,7 @@ subroutine ice_sheet_velocity(ice_H1,ice_T1, dyy, dxlat, vx, vy, zeta)
        dHdx_c = (iceH_jp1 - iceH_jm1)/(2*dx)
        dHdy_c = (iceH_ip1 - iceH_im1)/(2*dy)
        sigma_horizon  = rho_ice*g*sqrt(dHdx_c**2+dHdy_c**2)
-       end function sigma_horizon
+       end function 
 
 end subroutine
 
