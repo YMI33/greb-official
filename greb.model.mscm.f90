@@ -484,7 +484,7 @@ subroutine time_loop(it, isrec, year, CO2, irec, mon, ionum, Ts1, Ta1, q1, To1, 
 
 ! decon mean state switch
   if( log_hydro_dmc ==  0)    dq   = 0.0
-
+  
   q0 = q1 + dq
   ! sea ice heat capacity
   call seaice(Ts0)
@@ -709,9 +709,11 @@ subroutine hydro(Tsurf, q, Qlat, Qlat_air, dq_eva, dq_rain)
 ! saturated humiditiy (max. air water vapor)
   qs = 3.75e-3*exp(17.08085*(Tsurf-273.15)/(Tsurf-273.15+234.175));
   qs = qs*exp(-z_topo/z_air) ! scale qs by topography
+  where(qs < 1e-10 ) qs = 1e-10
 
 ! relative humidity
   rq = q/qs
+  where(rq > 1.2 ) rq = 1.2
 
 ! latent heat flux surface
   if ( log_eva == -1 ) then

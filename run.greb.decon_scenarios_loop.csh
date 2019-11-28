@@ -50,17 +50,17 @@ set LOG_VADV  = $switch_10[$i]
 set LOG_QFLUX = $switch_11[$i]
 
 # swiches to old version(-1) or new version (0) hydrocycle
-set LOG_RAIN  = 0  # precipitation parameterisation
-set LOG_EVA   = 0  # evaporation parameterisation
-set LOG_CONV  = 0  # advection parameterisation
-set LOG_CLIM  = 0 
+set LOG_RAIN  = -1 # precipitation parameterisation
+set LOG_EVA   = -1 # evaporation parameterisation
+set LOG_CONV  = -1 # advection parameterisation
+set LOG_CLIM  = -1
 
 echo $i
 
 ### compile GREB model (uncomment one of these three options)
 ### gfortran compiler (Linux (e.g. Ubuntu), Unix or MacBook Air)
 #gfortran -fopenmp -march=native -O3 -ffast-math -funroll-loops greb.model.mscm.f90 greb.shell.mscm.f90 -o greb.x
- gfortran -Ofast -ffast-math -funroll-loops -fopenmp greb.model.mscm.f90 greb.shell.mscm.f90 -o greb.x
+gfortran -Ofast -ffast-math -funroll-loops -fopenmp greb.model.mscm.f90 greb.shell.mscm.f90 -o greb.x
 ### ifortran compiler (Mac)
 # ifort -assume byterecl -O3 -xhost -align all -fno-alias greb.model.mscm.f90 greb.shell.mscm.f90 -o greb.x
 ### g95 compiler (other Linux)
