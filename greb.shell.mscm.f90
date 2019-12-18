@@ -75,9 +75,9 @@ read(20,rec=1)  glacier
 read(21,rec=1)  sw_solar_ctrl
 
 ! read scenario solar forcing for paleo scenarios or oribital forcings
-if ( log_exp .eq. 30 .or. log_exp .eq. 31 .or. log_exp .eq. 35 .or. log_exp .eq. 36 ) then
+if ( log_exp .eq. 30 .or. log_exp .eq. 31 .or. log_exp .eq. 35 .or. log_exp .eq. 36 .or. log_exp .eq. 310 ) then
 open(25,file='solar_scenario', ACCESS='DIRECT',FORM='UNFORMATTED', RECL=ireal*ydim*nstep_yr)
-read(25,rec=1)  sw_solar_scnr
+read(25,rec=1) sw_solar_scnr
 end if
 
 ! open CO2 forcing file for IPCC RCP scenarios (CO2 is read in forcing subroutine)

@@ -165,6 +165,7 @@ if ( $EXP == 97 ) set CO2='../input/ipcc.scenario.rcp45.forcing.txt'
 if ( $EXP == 98 ) set CO2='../input/ipcc.scenario.rcp6.forcing.txt'
 if ( $EXP == 99 ) set CO2='../input/ipcc.scenario.rcp85.forcing.txt'
 if ( $EXP == 100 ) set CO2='../input/'${CO2input}'.txt'
+if ( $EXP == 310 ) set SOLSCEN=${INDIR}'greb.solar.231K_hybers.corrected.bin'
 # link CO2 forcing file
 ln -s $CO2 co2forcing
 
@@ -226,7 +227,7 @@ if ( $EXP == 100 ) set FILENAME=exp-${EXP}.${CO2input}
 if ( $EXP == 230 ) set FILENAME=exp-${EXP}.forced.climatechange.ensemblemean.${log_tsurf_ext}${log_hwind_ext}${log_omega_ext}
 if ( $EXP == 240 ) set FILENAME=exp-${EXP}.forced.elnino.erainterim.${log_tsurf_ext}${log_hwind_ext}${log_omega_ext}
 if ( $EXP == 241 ) set FILENAME=exp-${EXP}.forced.lanina.erainterim.${log_tsurf_ext}${log_hwind_ext}${log_omega_ext}
-if ( $EXP == 310 ) set FILENAME=exp-${EXP}.ice.sheet.${log_tsurf_ext}${log_hwind_ext}${log_omega_ext}
+if ( $EXP == 310 ) set FILENAME=exp-${EXP}.solar.231K.CO2-200ppm
 
 # rename scenario run output and move it to output folder
 mv scenario.bin ../output/scenario.${FILENAME}.bin

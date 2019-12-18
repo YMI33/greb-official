@@ -101,7 +101,7 @@ set log_omega_ext=1 #force vertical velocity omega with external file (0=no forc
 set log_ice_sheet=1 #switch of ice sheet scheme
 
 # length of sensitivity experiment in years
-set YEARS=100
+set YEARS=99999
 
 # for EXP = 35 choose here a value between -250 and 900 (with an increment of 25) for the obliquity:
 # => possible range: [-250 (= -25deg),  900 (= +90deg)], todays value 225 (=22.5deg)
@@ -186,7 +186,7 @@ time_scnr = $YEARS  	! length of scenario run [yrs]
 EOF
 
 # run model
-./greb.x
+time ./greb.x
 
 # postprocessing
 # create output directory if does not already exist
@@ -229,7 +229,7 @@ if ( $EXP == 241 ) set FILENAME=exp-${EXP}.forced.lanina.erainterim.${log_tsurf_
 if ( $EXP == 310 ) set FILENAME=exp-${EXP}.ice.sheet.${log_tsurf_ext}${log_hwind_ext}${log_omega_ext}
 
 # calculate months of scenario run for header file
-@ MONTHS = $YEARS * 12
+@ MONTHS = $YEARS * 2
 
 
 # echo ' '
@@ -237,6 +237,17 @@ if ( $EXP == 310 ) set FILENAME=exp-${EXP}.ice.sheet.${log_tsurf_ext}${log_hwind
 # rename scenario run output and move it to output folder
 # mv ice_scheme_test.bin ../output/ice_scheme_test.bin
 # scenario run
+cat >/Volumes/YMI/research_data/GREB_10kyr/output/scenario_ice_sheet.${FILENAME}.ctl <<EOF
+dset ^scenario_ice_sheet.${FILENAME}.bin
+undef 9.e27
+xdef  96 linear 0 3.75
+ydef  48 linear -88.125 3.75
+zdef   1 linear 1 1
+tdef $MONTHS linear 15jan0001  1mo
+vars 3
+ts  1 0 ice surface temperature
+endvars
+EOF
 
 
 exit

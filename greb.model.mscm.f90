@@ -112,8 +112,8 @@ module mo_numerics
   real, parameter    :: dlon      = 360./xdim         ! linear increment in lon
   real, parameter    :: dlat      = 180./ydim         ! linear increment in lat
 
-  integer            :: ireal     = 1         	      ! record length for IO (machine dependent)
-! 						        ireal = 4 for Mac Book Pro and Ubuntu Linux
+  integer            :: ireal     = 4         	      ! record length for IO (machine dependent)
+! 						        ireal = 4 for Mac Book Pro and Ubuntu Linux, 1 is another option
 
   namelist / numerics / time_flux, time_ctrl, time_scnr
 
@@ -163,6 +163,7 @@ module mo_physics
 ! physical parameter (natural constants)
   parameter( pi        = 3.1416 )
   parameter( sig       = 5.6704e-8 )     ! stefan-boltzmann constant [W/m^2/K^4]
+  parameter( R_gas     = 8.314 )         ! universal gas constant J mol-1 K-1
   parameter( rho_ocean = 999.1 )         ! density of water at T=15C [kg/m^2]
   parameter( rho_land  = 2600. )         ! density of solid rock [kg/m^2]
   parameter( rho_air   = 1.2 )           ! density of air at 20C at NN
@@ -194,6 +195,9 @@ module mo_physics
   real :: To_ice2   = 273.15-1.7                   ! temperature range of ocean ice-albedo feedback
   real :: co_turb   = 5.0                          ! turbolent mixing to deep ocean [W/K/m^2]
   real :: kappa     = 8e5                          ! atmos. diffusion coefficient [m^2/s]
+  real :: ice_kappa = 2.1                          ! ice sheet diffusion coefficient [m^2/s] 
+  real :: enh_fact  = 3.                           ! enhance factor for ice flow 
+  real :: ice_Tcons = 273.15-10.                   ! critical temperature for constitutive equation
   parameter( ce        = 2e-3  )                   ! laten heat transfer coefficient for ocean
   parameter( cq_latent = 2.257e6 )                 ! latent heat of condensation/evapoartion f water [J/kg]
   parameter( ci_latent = 3.335e5 )                 ! latent heat of condensation/fusion f ice [J/kg]
@@ -209,6 +213,8 @@ module mo_physics
 ! parameter emisivity
   real, dimension(10) :: p_emi = (/9.0721, 106.7252, 61.5562, 0.0179, 0.0028,     &
 &                                             0.0570, 0.3462, 2.3406, 0.7032, 1.0662/)
+  real, dimension(2)  :: actene = (/1.39e5,6e4/)       ! constitutive equation coefficients, activate energy (>-10oC and <-10oC, Glen's flow law)
+  real, dimension(2)  :: A_fact = (/1.96e3,3.985e-13/) ! constitutive equation coefficients, softness parameter (>-10oC and <-10oC, Glen's flow law)
 
 ! declare climate fields
   real, dimension(xdim,ydim)          ::  z_topo, glacier,z_ocean
@@ -286,16 +292,18 @@ subroutine greb_model
   real, dimension(xdim,ydim) :: Ts0, Ts1, Ta0, Ta1, To0, To1, q0, q1,       &
 &                               ts_ini, ta_ini, q_ini, to_ini,              &
 &                               iceH_ini,ice_Ts0, ice_Ts1, ice_H1, ice_H0
+  character(len=37):: dir
 
 ! open output files
-  open(101,file='control.bin',ACCESS='DIRECT',FORM='UNFORMATTED', RECL=ireal*xdim*ydim)
-  open(102,file='scenario.bin',ACCESS='DIRECT',FORM='UNFORMATTED', RECL=ireal*xdim*ydim)
-  open(103,file='scenario.gmean.bin',ACCESS='DIRECT',FORM='UNFORMATTED', RECL=ireal)
+  dir = '/Volumes/YMI/research_data/GREB_10kyr'
+  open(101,file=dir//'/control.bin',ACCESS='DIRECT',FORM='UNFORMATTED', RECL=ireal*xdim*ydim)
+  open(102,file=dir//'/scenario.bin',ACCESS='DIRECT',FORM='UNFORMATTED', RECL=ireal*xdim*ydim)
+  open(103,file=dir//'/scenario.gmean.bin',ACCESS='DIRECT',FORM='UNFORMATTED', RECL=ireal)
 ! ice sheet files
   if(log_ice_sheet == 1) then
-      open(201,file='control_ice_sheet.bin',ACCESS='DIRECT',FORM='UNFORMATTED', RECL=ireal*xdim*ydim)
-      open(202,file='scenario_ice_sheet.bin',ACCESS='DIRECT',FORM='UNFORMATTED', RECL=ireal*xdim*ydim)
-      open(203,file='scenario_ice_sheet.gmean.bin',ACCESS='DIRECT',FORM='UNFORMATTED', RECL=ireal)
+      open(201,file=dir//'/control_ice_sheet.bin',ACCESS='DIRECT',FORM='UNFORMATTED', RECL=ireal*xdim*ydim)
+      open(202,file=dir//'/scenario_ice_sheet.bin',ACCESS='DIRECT',FORM='UNFORMATTED', RECL=ireal*xdim*ydim)
+      open(203,file=dir//'/scenario_ice_sheet.gmean.bin',ACCESS='DIRECT',FORM='UNFORMATTED', RECL=ireal)
   end if
 
   dTrad = -0.16*Tclim -5. ! offset Tatmos-rad
@@ -333,7 +341,8 @@ subroutine greb_model
   q_ini    = qclim(:,:,nstep_yr)                          ! initial value atmos water vapor
   iceH_ini = 0.                                           ! initial ice sheet thickness
 
-  CO2_ctrl = 340.0
+  !CO2_ctrl = 340.0
+  CO2_ctrl = 200.0
 ! decon mean state switch
   if (log_co2_dmc == 0) CO2_ctrl = 0.
 
@@ -418,7 +427,7 @@ subroutine greb_model
   Ts1 = Ts_ini; Ta1 = Ta_ini; To1 = To_ini; q1 = q_ini; ice_Ts1 = Ts1; ice_H1 = iceH_ini                  ! initialize fields / ice sheet 
   year=1970; mon=1; irec=0; Tmm=0.; Tamm=0.; qmm=0.; apmm=0.;
   do it=1, time_ctrl*nstep_yr                                             ! main time loop
-    call time_loop(it, isrec, year, CO2_ctrl, irec, mon, 101, Ts1, Ta1, q1, To1, Ts0,Ta0, q0, To0, ice_Ts0, ice_H0, ice_Ts1, ice_H1 )
+    call time_loop(it, isrec, year, CO2_ctrl, irec, mon, 101, Ts1, Ta1, q1, To1, Ts0,Ta0, q0, To0, ice_Ts0, ice_H0, ice_Ts1, ice_H1)
     Ts1=Ts0; Ta1=Ta0; q1=q0; To1=To0; ice_Ts1=ice_Ts0; ice_H1=ice_H0
     if (log_exp .eq. 1 .and. mod(it,nstep_yr) .eq. 0) year=year+1
   end do
@@ -450,17 +459,18 @@ if ( log_exp .ne. 1 .or. time_scnr .ne. 0 ) then
      vclim      = vclim + vclim_anom_enso
      omegaclim  = omegaclim + omegaclim_anom_enso
      wsclim     = wsclim + wsclim_anom_enso
+  if( log_exp .eq. 310  ) sw_solar = sw_solar_scnr ! paleo 231 kyr bp
   end if
 
   print*,'% SCENARIO EXP: ',log_exp,'  time=', time_scnr,'yr'
   print 1001, "YEAR", "CO2[ppm]", "SW[W/m^2]", "global mean[C]", "Trop Pac[C]", "Hamburg[C]", "North Pole[C]" !TB
   Ts1 = Ts_ini; Ta1 = Ta_ini; q1 = q_ini; To1 = To_ini; ice_H1 = iceH_ini; ice_Ts1 = Ts1                     ! initialize field / ice sheet
   year=1950.; CO2=340.0; mon=1; irec=0; Tmm=0.; Tamm=0.; qmm=0.; apmm=0.;
-  if (log_exp .ge. 35 .and. log_exp .le. 37) year=1.
+  if (log_exp .ge. 35 .and. log_exp .le. 37 .or. log_exp .eq. 310) year=1.
 
   do it=1, time_scnr*nstep_yr                                              ! main time loop
      call forcing(it, year, CO2, Ts1)
-     call time_loop(it,isrec, year, CO2, irec, mon, 102, Ts1, Ta1, q1, To1, Ts0,Ta0, q0, To0, ice_Ts0, ice_H0, ice_Ts1, ice_H1 )
+     call time_loop(it,isrec, year, CO2, irec, mon, 102, Ts1, Ta1, q1, To1, Ts0,Ta0, q0, To0, ice_Ts0, ice_H0, ice_Ts1, ice_H1)
      Ts1=Ts0; Ta1=Ta0; q1=q0; To1=To0; ice_Ts1=ice_Ts0; ice_H1=ice_H0
      if (mod(it,nstep_yr) == 0) year=year+1
   end do
@@ -490,7 +500,7 @@ subroutine time_loop(it, isrec, year, CO2, irec, mon, ionum, Ts1, Ta1, q1, To1, 
   call tendencies(CO2, Ts1, Ta1, To1, q1, ice_cover, SW, LW_surf, Q_lat,      &
 &                    Q_sens, Q_lat_air, dq_eva, dq_rain, dq_crcl,             &
 &                    dTa_crcl, dT_ocean, dTo, LWair_down, LWair_up, em,       &
-&                    ice_Ts1, ice_H1, ice_snf, ice_fus, ice_melt, Fn_surf)  ! ice sheet 
+&                    ice_Ts1, ice_H1, ice_snf, ice_fus, ice_melt)  ! ice sheet 
 
   Tmin_limit = 40 ! no very low Tsurf/Tatmoss;  numerical stability
 
@@ -515,11 +525,11 @@ subroutine time_loop(it, isrec, year, CO2, irec, mon, ionum, Ts1, Ta1, q1, To1, 
 
   ! ice sheet : spread and ablation
   if(log_ice_sheet == 1) then
-      Fn_surf = Fn_surf + TF_correct(:,:,ityr)
+      Fn_surf = sw + LW_surf - LWair_down + Q_sens + Q_lat + TF_correct(:,:,ityr)
       call ice_sheet(it, ionum, irec, mon, ice_Ts0, ice_H0, ice_Ts1, ice_H1, ice_snf, ice_fus, ice_melt, dT_ocean, Fn_surf)
   end if
   ! sea ice heat capacity
-  call seaice(Ts0, ice_H0)
+  call seaice(Ts0)
   ! write output
   call output(it, ionum, irec, mon, ts0, ta0, to0, q0, ice_cover, dq_rain, dq_eva, dq_crcl)
   ! diagnostics: annual means plots
@@ -530,7 +540,7 @@ end subroutine time_loop
 !+++++++++++++++++++++++++++++++++++++++
 subroutine tendencies(CO2, Ts1, Ta1, To1, q1, ice_cover, SW, LW_surf, Q_lat, Q_sens, Q_lat_air,  &
 &                     dq_eva, dq_rain, dq_crcl, dTa_crcl, dT_ocean, dTo, LWair_down, LWair_up, em, &
-&                     ice_Ts1, ice_H1, ice_snf, ice_fus, ice_melt, Fn_surf)  ! ice sheet 
+&                     ice_Ts1, ice_H1, ice_snf, ice_fus, ice_melt)  ! ice sheet 
 !+++++++++++++++++++++++++++++++++++++++
 
   use mo_numerics
@@ -543,16 +553,12 @@ subroutine tendencies(CO2, Ts1, Ta1, To1, q1, ice_cover, SW, LW_surf, Q_lat, Q_s
 &                               dT_ocean, dTo, ice_Ts1, ice_H1,                &
 &                               Fn_surf, ice_snf, ice_fus, ice_melt
 
-!$omp parallel sections
-!$omp section
     ! SW radiation model
     call SWradiation(Ts1, sw, ice_cover)
-!$omp section
     ! LW radiation model
     call LWradiation(Ts1, Ta1, q1, CO2, LW_surf, LWair_up, LWair_down, em)
     ! sensible heat flux
     Q_sens = ct_sens*(Ta1-Ts1)
-!$omp section
 ! decon mean state switch
     if (log_atmos_dmc == 0) Q_sens = 0.
 
@@ -568,14 +574,14 @@ subroutine tendencies(CO2, Ts1, Ta1, To1, q1, ice_cover, SW, LW_surf, Q_lat, Q_s
     end if    
     
     ! atmos. circulation
+!$omp parallel sections
 !$omp section
     call circulation( Ta1, dTa_crcl, z_air, wz_air)       ! air temp
 !$omp section
     call circulation( q1,  dq_crcl, z_vapor, wz_vapor)   ! atmos water vapor
-!$omp section
+!$omp end parallel sections
     ! deep ocean interaction
     call deep_ocean( Ts1, To1, dT_ocean, dTo)
-!$omp end parallel sections
 
 end subroutine tendencies
 
@@ -601,7 +607,7 @@ subroutine  qflux_correction(CO2_ctrl, Ts1, Ta1, q1, To1)
      call tendencies(CO2_ctrl, Ts1, Ta1, To1, q1, ice_cover, SW, LW_surf, Q_lat,     &
 &                    Q_sens, Q_lat_air, dq_eva, dq_rain, dq_crcl, dTa_crcl,          &
 &                    dT_ocean, dTo, LWair_down, LWair_up, em,                        &
-&                    ice_Ts1, ice_H1, ice_snf, ice_fus, ice_melt, Fn_surf)  ! ice sheet 
+&                    ice_Ts1, ice_H1, ice_snf, ice_fus, ice_melt)  ! ice sheet 
 
     ! surface temperature without heat flux correction
     dTs = dt*( sw +LW_surf -LWair_down +Q_lat +Q_sens) / cap_surf
@@ -1408,6 +1414,8 @@ subroutine forcing(it, year, CO2, Tsurf)
 
 ! Forced ENSO run
   if( log_exp .eq. 240 .or. log_exp .eq. 241 ) Tsurf = Tclim(:,:,ityr)  ! Keep temp on external boundary condition
+  if( log_exp .eq. 310  ) CO2      = 200. ! paleo 231 kyr BP
+  if( log_exp .eq. 310  ) sw_solar = sw_solar_scnr !
 
 
 end subroutine forcing
@@ -1536,6 +1544,50 @@ subroutine output(it, iunit, irec, mon, ts0, ta0, to0, q0, ice_cover, dq_rain, d
 end subroutine output
 
 !+++++++++++++++++++++++++++++++++++++++
+subroutine ice_sheet(it, ionum, irec, mon, ice_Ts0, ice_H0, ice_Ts1, ice_H1, ice_snf, ice_fus, ice_melt, dT_ocean, Fn_surf)
+!+++++++++++++++++++++++++++++++++++++++
+  USE mo_numerics, ONLY: xdim, ydim, dt
+  USE mo_physics,  ONLY: z_topo, cap_ice, rho_ice, cp_ice, d_ice_max, cap_surf
+  implicit none
+  real, dimension(xdim,ydim) :: ice_Ts0                 ! ice surface temperature (forward) [K]
+  real, dimension(xdim,ydim) :: ice_Ts1                 ! ice surface temperature (current) [K]
+  real, dimension(xdim,ydim) :: Fn_surf                 ! surface net heat flux [J/m2]
+  real, dimension(xdim,ydim) :: dT_ocean                ! ocean temperature change [K]
+  real, dimension(xdim,ydim) :: U_gtmlt                 ! ocean temperature change [K]
+
+  real, dimension(xdim,ydim) :: ice_H0                  ! ice thickness (forward) [m]
+  real, dimension(xdim,ydim) :: ice_H1                  ! ice thickness (current) [m]
+  real, dimension(xdim,ydim) :: ice_snf                 ! snowfall accumulation rate [m]
+  real, dimension(xdim,ydim) :: ice_melt                ! ice melting accumulation [m]
+  real, dimension(xdim,ydim) :: ice_fus                 ! ice melting latent heat [W/m2]
+  real, dimension(xdim,ydim) :: ice_cover               ! ice cover type [-1~0:partial ice sheet;0 land;0~1 partial sea ice]
+
+  real                       :: Tmin_limit              ! no very low Tsurf/Tatmoss;  numerical stability
+
+  integer                    :: ionum                   ! file unit of GREB
+  integer                    :: ice_iounit              ! file unit of ice sheet data
+  integer                    :: it, irec, mon           ! work variable for count
+
+  Tmin_limit = 40
+  
+  ! snowfall accumulation
+  where(z_topo >= 0) ice_H0 = ice_H1 + dt* (ice_snf + ice_melt)
+  
+  ! ice surface temperature
+  ice_Ts0  = ice_Ts1 + dT_ocean + dt*(Fn_surf + ice_fus ) / cap_ice 
+  where(ice_Ts0 .le. Tmin_limit ) ice_Ts0 = Tmin_limit ! no very low Tsurf;  numerical stability
+  ! thickness after fusion
+  
+ !  where(ice_H0 > 0.) cap_surf = cap_land                       ! ice sheet heat capacity
+  ! ice sheet output
+  ice_iounit = 100 + ionum
+  call ice_output(it, ice_iounit, irec, mon, ice_Ts0, ice_H0, ice_melt)
+  
+end subroutine ice_sheet
+
+!+++++++++++++++++++++++++++++++++++++++
+
+!+++++++++++++++++++++++++++++++++++++++
 subroutine ice_accumulation(ice_snf, ice_Ts1, Ta1, dq_rain, wz_vapor) 
 !+++++++++++++++++++++++++++++++++++++++
 ! ice sheet : accumulation process
@@ -1594,49 +1646,6 @@ subroutine ice_fusion( ice_fus, ice_melt, ice_Ts1, ice_H1, Fn_surf, dT_ocean)
 
 end subroutine ice_fusion
 
-!+++++++++++++++++++++++++++++++++++++++
-subroutine ice_sheet(it, ionum, irec, mon, ice_Ts0, ice_H0, ice_Ts1, ice_H1, ice_snf, ice_fus, ice_melt, dT_ocean, Fn_surf)
-!+++++++++++++++++++++++++++++++++++++++
-  USE mo_numerics, ONLY: xdim, ydim, dt
-  USE mo_physics,  ONLY: z_topo, cap_ice, rho_ice, cp_ice, d_ice_max, cap_surf
-  implicit none
-  real, dimension(xdim,ydim) :: ice_Ts0                 ! ice surface temperature (forward) [K]
-  real, dimension(xdim,ydim) :: ice_Ts1                 ! ice surface temperature (current) [K]
-  real, dimension(xdim,ydim) :: Fn_surf                 ! surface net heat flux [J/m2]
-  real, dimension(xdim,ydim) :: dT_ocean                ! ocean temperature change [K]
-  real, dimension(xdim,ydim) :: U_gtmlt                 ! ocean temperature change [K]
-
-  real, dimension(xdim,ydim) :: ice_H0                  ! ice thickness (forward) [m]
-  real, dimension(xdim,ydim) :: ice_H1                  ! ice thickness (current) [m]
-  real, dimension(xdim,ydim) :: ice_snf                 ! snowfall accumulation rate [m]
-  real, dimension(xdim,ydim) :: ice_melt                ! ice melting accumulation [m]
-  real, dimension(xdim,ydim) :: ice_fus                 ! ice melting latent heat [W/m2]
-  real, dimension(xdim,ydim) :: ice_cover               ! ice cover type [-1~0:partial ice sheet;0 land;0~1 partial sea ice]
-
-  real                       :: Tmin_limit              ! no very low Tsurf/Tatmoss;  numerical stability
-
-  integer                    :: ionum                   ! file unit of GREB
-  integer                    :: ice_iounit              ! file unit of ice sheet data
-  integer                    :: it, irec, mon           ! work variable for count
-
-  Tmin_limit = 40
-  
-  ! snowfall accumulation
-  where(z_topo >= 0) ice_H0 = ice_H1 + dt* (ice_snf + ice_melt)
-  
-  ! ice surface temperature
-  ice_Ts0  = ice_Ts1 + dT_ocean + dt*(Fn_surf + ice_fus ) / cap_ice 
-  where(ice_Ts0 .le. Tmin_limit ) ice_Ts0 = Tmin_limit ! no very low Tsurf;  numerical stability
-  ! thickness after fusion
-  
- !  where(ice_H0 > 0.) cap_surf = cap_land                       ! ice sheet heat capacity
-  ! ice sheet output
-  ice_iounit = 100 + ionum
-  call ice_output(it, ice_iounit, irec, mon, ice_Ts0, ice_H0, ice_melt)
-  
-end subroutine ice_sheet
-
-!+++++++++++++++++++++++++++++++++++++++
 subroutine ice_output(it, ice_iounit, irec, mon, ice_Ts0, ice_H0, ice_melt)
 !+++++++++++++++++++++++++++++++++++++++
 ! ice sheet : output file
@@ -1715,3 +1724,4 @@ end do
 gmean = sum(data*w)/sum(w)
 
 end function
+

@@ -1,87 +1,103 @@
 ! ice sheet model for GREB
 ! start 26 Sep 2019
 ! reference code : https://github.com/dongli/IAP-CGFD/blob/master/advection/ffsl/main_2d.cpp
+
+include "greb.model.mscm.f90"
+
+
 program ice_sheet_model
+  USE mo_numerics, ONLY: xdim, ydim, ndt_days, ndays_yr, ireal, &
+                         dlon, dlat
+  USE mo_physics, ONLY: pi, cp_ice, rho_ice, ice_kappa, z_topo, d_ice_max, Tl_ice2
   implicit none
-  character(len=100) :: filename
+  real,external      :: gmean
   integer, external  :: cycle_ind
-  integer, parameter :: xdim = 96, ydim = 48          ! field dimensions
-  integer, parameter :: ndt_days  = 24*3600           ! number of timesteps per day
-  integer, parameter :: ndays_yr  = 365               ! number of days per year
+  character(len=120) :: filename
+  character(len=37)  :: dirname
   integer, parameter :: ndt_yr    = ndays_yr*ndt_days        ! number of timesteps per day
   real,parameter     :: gs_layer = 1./sqrt(3.)
   real,dimension(4)  :: zeta = (/-1.,-gs_layer,gs_layer,1./)
-  real               :: dt        = ndt_yr/2           ! time step [s]
-  integer            :: ireal     = 4
-  integer            :: i, j, k, irec, nstep_end 
-  real               :: iceH_indp2, iceH_indp1, iceH_ind, iceH_indm1, iceH_indm2, dTdz2 
-  real,parameter     :: pi        = 3.1416 
-  real,parameter     :: ice_kappa = 2.1 
-  real,parameter     :: cp_ice    = 2009 
-  real,parameter     :: rho_ice   = 910 
+  real               :: dt        = 365*86400/2           ! time step [s]
+  integer            :: i, j, k,  nrec, irec, nstep_end,year 
+  real               :: iceH_indp2, iceH_indp1, iceH_ind, iceH_indm1, iceH_indm2
+  real               :: dTdz2, T0_diff, T1_diff 
 
-  real, dimension(xdim,ydim)     :: iceH_ini, ice_H1, ice_H0, ice_Hx, ice_Hy, ice_zs, z_topo
-  real, dimension(xdim,ydim)     :: ice_Tx, ice_Ty, term_sig, term_dif, term_adv
+  real, dimension(xdim,ydim)     :: ice_H1, ice_H0, ice_Hx, ice_Hy, ice_zs, ice_mask
+  real, dimension(xdim,ydim)     :: ice_Hm1, ice_Hmn 
+  real, dimension(xdim,ydim)     :: term_mass
+  real, dimension(xdim,ydim)     :: ice_Tx, ice_Ty, ice_Ts1, ice_Ts0, ice_Tsmn
   real, dimension(xdim,ydim+1,4) :: ice_vx3, ice_vy3, vy3, vx3
   real, dimension(xdim,ydim+1)   :: crantx, cranty, fu, fv, ice_vx, ice_vy, ice_vmx, ice_vmy
   real, dimension(xdim,ydim,4)   :: ice_T1, ice_T0, ice_Tcoef
+  real, dimension(xdim,ydim,4)   :: term_sig, term_dif, term_adv, dice_T
   real, dimension(ydim)      :: lat, dxlat
   real    :: deg, dx, dy, dyy
-  real, parameter    :: dlon      = 360./xdim         ! linear increment in lon
-  real, parameter    :: dlat      = 180./ydim         ! linear increment in lat
   integer, dimension(ydim)   :: ilat = (/(i,i=1,ydim)/)
 
   deg = 2.*pi*6.371e6/360.;   ! length of 1deg latitude [m]
-  !deg = pi/180.;   ! length of 1deg latitude [m]
   dx = dlon; dy=dlat; dyy=dy*deg
   lat = dlat*ilat-dlat/2.-90.;  dxlat=dx*deg*cos(2.*pi/360.*lat)
 
-  nstep_end = 1
-  
-  open(301,file='ice_scheme_test_H1.bin',ACCESS='DIRECT',FORM='UNFORMATTED', RECL=ireal*xdim*ydim)
-  open(302,file='ice_scheme_test_zs.bin',ACCESS='DIRECT',FORM='UNFORMATTED', RECL=ireal*xdim*ydim)
-  open(306,file='ice_scheme_test_thk.bin',ACCESS='DIRECT',FORM='UNFORMATTED', RECL=ireal*xdim*ydim)
-  open(303,file='ice_scheme_test_tmp.bin',ACCESS='DIRECT',FORM='UNFORMATTED', RECL=ireal*xdim*ydim*4)
-  open(304,file='ice_scheme_test_vx.bin',ACCESS='DIRECT',FORM='UNFORMATTED', RECL=ireal*xdim*(ydim+1)*4)
-  open(305,file='ice_scheme_test_vy.bin',ACCESS='DIRECT',FORM='UNFORMATTED', RECL=ireal*xdim*(ydim+1)*4)
-  filename = '/Users/zxie0012/Documents/ice_sheet_model/model/my_ice_model/sico_out/zs.bin'
-  open(11,file=filename,ACCESS='DIRECT',FORM='UNFORMATTED', RECL=ireal*xdim*ydim)
-  read(11,rec=1) ice_zs
-  filename = '/Users/zxie0012/Documents/ice_sheet_model/model/my_ice_model/sico_out/thk.bin'
-  open(12,file=filename,ACCESS='DIRECT',FORM='UNFORMATTED', RECL=ireal*xdim*ydim)
-  read(12,rec=1) ice_H1
-  filename = '/Users/zxie0012/Documents/ice_sheet_model/model/my_ice_model/sico_out/temp.bin'
-  open(15,file=filename,ACCESS='DIRECT',FORM='UNFORMATTED', RECL=ireal*xdim*ydim*4)
-  read(15,rec=1) ice_T1
-  filename = '/Users/zxie0012/Documents/ice_sheet_model/model/my_ice_model/sico_out/vx.bin'
-  open(13,file=filename,ACCESS='DIRECT',FORM='UNFORMATTED', RECL=ireal*xdim*(ydim+1)*4)
-  read(13,rec=1) vx3
-  filename = '/Users/zxie0012/Documents/ice_sheet_model/model/my_ice_model/sico_out/vy.bin'
-  open(14,file=filename,ACCESS='DIRECT',FORM='UNFORMATTED', RECL=ireal*xdim*(ydim+1)*4)
-  read(14,rec=1) vy3
-  write(302,rec=1) ice_zs
-  write(303,rec=1) ice_T1
-  write(306,rec=1) ice_H1
-  
- ! do j=1,xdim
- !     do i=ydim/2,ydim
- !         ice_H1(j,i) = 2000*exp(-(i-ydim/2-0.5)**2)
- !     end do
- ! end do
- ! ice_T1 = 273.15
- ! ice_zs = ice_H1
-  
-  z_topo = ice_zs - ice_H1
-  call ice_regression_coef(ice_T1, ice_Tcoef)
+  nstep_end = 19999
+  year = 1
 
-  do irec = 1,nstep_end
+  
+ ! initialization 
+  open(19,file='../input/global.topography.bin',      		ACCESS='DIRECT',FORM='UNFORMATTED', RECL=ireal*xdim*ydim)
+  read(19,rec=1)  z_topo
  
+  dirname = "/Volumes/YMI/research_data/GREB_10kyr"
+  filename = dirname // '/scenario_ice_sheet.exp-310.solar.231K.bin'
+  open(301,file=filename,ACCESS='DIRECT',FORM='UNFORMATTED', RECL=ireal*xdim*ydim)
+  filename = dirname // '/output/ice_thickness.bin'
+  open(302,file=filename,ACCESS='DIRECT',FORM='UNFORMATTED', RECL=ireal*xdim*ydim)
+  filename = dirname //  '/output/ice_temperature.bin'
+  open(303,file=filename,ACCESS='DIRECT',FORM='UNFORMATTED', RECL=ireal*xdim*ydim*4)
+  filename = dirname // '/output/ice_velocity_x.bin'
+  open(304,file=filename,ACCESS='DIRECT',FORM='UNFORMATTED', RECL=ireal*xdim*(ydim+1)*4)
+  filename = dirname // '/output/ice_velocity_y.bin'
+  open(305,file=filename,ACCESS='DIRECT',FORM='UNFORMATTED', RECL=ireal*xdim*(ydim+1)*4)
+  
+  nrec = 0
+  do k=1,6
+      read(301,rec=nrec+1) ice_Tsmn
+      read(301,rec=nrec+2) ice_Hmn
+      read(301,rec=nrec+3) ice_mask
+      nrec = nrec + 3
+  end do
+  ice_Ts1   = ice_Tsmn
+  ice_H1    = ice_Hmn
+  ice_Hm1   = ice_Hmn
 
-  ! thickness equation (outer operator)
+  do k = 1,4
+      ice_T1(:,:,k) = ice_Ts1
+  end do
+  
+  do irec = 1,nstep_end
+  
+  do k=1,6
+      read(301,rec=nrec+1) ice_Tsmn
+      read(301,rec=nrec+2) ice_Hmn
+      read(301,rec=nrec+3) ice_mask
+      nrec = nrec + 3
+  end do
+
+  ice_zs    = z_topo+ice_H1
+  ice_Ts1   = ice_Tsmn
+  term_mass = ice_Hmn - ice_Hm1
+  ice_Hm1   = ice_Hmn
+  ice_T1(:,:,4) = ice_Ts1
+  do j = 1,xdim
+     do i = 1,ydim
+        call ice_regression_coef(ice_T1(j,i,:), ice_Tcoef(j,i,:))
+        call ice_temperature_diffusion(ice_T1(j,i,:), ice_H1(j,i), zeta, term_dif(j,i,:))
+     end do
+  end do
+  ! thickness eqation (outer operator)
   ! velocity 
   ice_vx = 0.
   ice_vy = 0.
-  call ice_sheet_velocity(ice_zs,ice_H1,ice_Tcoef, dyy, dxlat, ice_vx, ice_vy, 0., term_sig, 'mean')
+  call ice_sheet_velocity(ice_zs,ice_H1,ice_Tcoef, dyy, dxlat, ice_vx, ice_vy, 0., term_sig, 'mean',irec)
   
   fu     = 0.
   fv     = 0.
@@ -101,16 +117,16 @@ program ice_sheet_model
 
   do j = 1,xdim
       do i = 1,ydim
-          ice_H0(j,i) = ice_H1(j,i) - (fu(cycle_ind(j+1,xdim),i)-fu(j,i)) - (fv(j,i+1)-fv(j,i))/cos(lat(i)/180*pi)
+          ice_H0(j,i) = ice_H1(j,i) - (fu(cycle_ind(j+1,xdim),i)-fu(j,i)) - (fv(j,i+1)-fv(j,i))/cos(lat(i)/180*pi) &
+                      + term_mass(j,i)
       end do   
   end do
-
-  ! temperature equation (outer operator)
+  ! temperature eqation (outer operator)
   do k = 1,4
       ! velocity 
       ice_vx = 0.
       ice_vy = 0.
-      call ice_sheet_velocity(ice_zs,ice_H1,ice_Tcoef, dyy, dxlat, ice_vx, ice_vy, zeta(k), term_sig, 'levs')
+      call ice_sheet_velocity(ice_zs,ice_H1,ice_Tcoef, dyy, dxlat, ice_vx, ice_vy, zeta(k), term_sig(:,:,k), 'levs',irec)
       ice_vx3(:,:,k) = ice_vx
       ice_vy3(:,:,k) = ice_vy
       
@@ -132,42 +148,47 @@ program ice_sheet_model
     
       do j = 1,xdim
           do i = 1,ydim
-              dTdz2         = 4*(2*ice_Tcoef(j,i,3)+6*zeta(k)*ice_Tcoef(j,i,4))/(ice_H1(j,i)*ice_H1(j,i))
-              term_dif(j,i) = dt*dTdz2*ice_kappa/(cp_ice*rho_ice)
-              term_adv(j,i) =  - (fu(cycle_ind(j+1,xdim),i)-fu(j,i)) - (fv(j,i+1)-fv(j,i))/cos(lat(i)/180*pi)
-              term_sig(j,i) = dt*term_sig(j,i)/(cp_ice*rho_ice)
+              term_adv(j,i,k) =  - (fu(cycle_ind(j+1,xdim),i)-fu(j,i)) - (fv(j,i+1)-fv(j,i))/cos(lat(i)/180*pi)
+              term_sig(j,i,k) = dt*term_sig(j,i,k)/(cp_ice*rho_ice)
           end do   
       end do
-      ice_T0(:,:,k) = ice_T1(:,:,k) + term_adv + term_dif + term_sig
 
   end do
+  dice_T = term_adv + term_dif + term_sig
+  where(dice_T > Tl_ice2-ice_T1) dice_T = 0.9*(Tl_ice2-ice_T1) ! numeric stability
+  ice_T0 = ice_T1 + dice_T
   
   !print*,ice_H0(38,41), ice_vy(38,41),cranty(38,42),ice_vy(38,42)*86400
-  write(301,rec=irec) ice_H0
-  write(304,rec=1) ice_vx3
-  write(305,rec=1) ice_vy3
+   if(mod(irec,2) == 1) then
+   print *, "YEAR ", "ice surface temperature ", "ice thickness [m] ", "Greenland ", "Antarctic ", "Tibetan" !TB
+   print *, year, gmean(ice_T0(:,:,4))-273.15,gmean(ice_H1) !TB
+   year = year + 1
+   end if
+
+  write(302,rec=irec) ice_H0
+  write(303,rec=irec) ice_T0
+  write(304,rec=irec) ice_vx3
+  write(305,rec=irec) ice_vy3
   
   ice_H1 = ice_H0
-  ice_zs = z_topo+ice_H0
   ice_T1 = ice_T0
+
   end do
 end
 
-subroutine ice_sheet_velocity(ice_zs,ice_H1,ice_Tcoef, dyy, dxlat, ice_vx, ice_vy, zeta, term_sig, opt)
+subroutine ice_sheet_velocity(ice_zs,ice_H1,ice_Tcoef, dyy, dxlat, ice_vx, ice_vy, zeta, term_sig, opt, irec)
+  USE mo_numerics, ONLY: xdim, ydim
+  USE mo_physics, ONLY: pi, rho_ice, grav, d_ice_max 
   implicit none
   integer, external  :: cycle_ind
   character(len=4)   :: opt
-  integer, parameter :: xdim = 96, ydim = 48          ! field dimensions
-  real,parameter     :: g         = 9.8
-  integer            :: i, j, k1, k2, k3, ind_zonal_real
+  integer            :: i, j, k1, k2, k3, ind_zonal_real,irec
   real               :: iceZ_jm1, iceZ_im1, iceZ_c, iceH_c,iceH_jm1, iceH_im1,dZ
   real               :: sighrz, sighrzjm, sighrzim
   real               :: T_layer, T_Gauss, T_Gaussjm, T_Gaussim, coef, coef_jm, coef_im
-  real               :: cons_int, cons_intjm, cons_intim, term_poly 
-  real               ::  dZdx, dZdy
+  real               :: cons_int, cons_intjm, cons_intim, term_poly, term_polyjm, term_polyim
+  real               :: dZdx, dZdy
   real               :: deg, dyy, zeta, zh, zr
-  real,parameter     :: pi         = 3.1416 
-  real,parameter     :: rho_ice    = 910.
   real,dimension(4)  :: coef_poly  = (/1,3,3,1/)
   real,dimension(3)  :: gs_nodem   = (/0.8920, -0.4678, 0.1598/)
   real,dimension(3)  :: gs_weightm = (/3.4961,  2.5689, 0.3350/)
@@ -196,7 +217,7 @@ subroutine ice_sheet_velocity(ice_zs,ice_H1,ice_Tcoef, dyy, dxlat, ice_vx, ice_v
           call meridion_shift(ice_H1, j, i-1, iceH_im1)
           ind_zonal_real = cycle_ind(j-1,xdim) 
           call meridion_shift(ice_H1, ind_zonal_real, i, iceH_jm1)
-          if(iceH_c .eq. 0) cycle
+          if(iceH_c < d_ice_max .and. iceH_im1 < d_ice_max .and. iceH_jm1 < d_ice_max) cycle
 
           ! effective stress horizontal part, vertical part is left for intergal
           sighrz      = sigma_horizon(ice_zs, ice_H1, j  , i, dxlat, dyy)
@@ -211,20 +232,20 @@ subroutine ice_sheet_velocity(ice_zs,ice_H1,ice_Tcoef, dyy, dxlat, ice_vx, ice_v
                   do k3 = 1,4
                       call meridion_shift(ice_Tcoef(:,:,k3), j, i, coef  )
                       T_layer   = T_layer   + coef*zeta**(k3-1)
-                      if(opt .eq. 'mean') then
+                      if(opt == 'mean') then
                           T_Gauss   = T_Gauss   + coef*gs_nodem(k2)**(k3-1)
                       else
                           T_Gauss   = T_Gauss   + coef*gs_node(k2,k1)**(k3-1)
                       end if
                       ind_zonal_real = cycle_ind(j-1,xdim) 
                       call meridion_shift(ice_Tcoef(:,:,k3), ind_zonal_real, i, coef_jm)
-                      if(opt .eq. 'mean') then
+                      if(opt == 'mean') then
                           T_Gaussjm = T_Gaussjm + coef_jm*gs_nodem(k2)**(k3-1)
                       else
                           T_Gaussjm = T_Gaussjm + coef_jm*gs_node(k2,k1)**(k3-1)
                       end if
                       call meridion_shift(ice_Tcoef(:,:,k3), j, i-1, coef_im)
-                      if(opt .eq. 'mean') then
+                      if(opt == 'mean') then
                           T_Gaussim = T_Gaussim + coef_im*gs_nodem(k2)**(k3-1)
                       else
                           T_Gaussim = T_Gaussim + coef_im*gs_node(k2,k1)**(k3-1)
@@ -235,17 +256,21 @@ subroutine ice_sheet_velocity(ice_zs,ice_H1,ice_Tcoef, dyy, dxlat, ice_vx, ice_v
                   if(T_Gaussjm > 273.15) T_Gaussjm = 273.15
                   if(T_Gaussim > 273.15) T_Gaussim = 273.15
                   
+                  term_poly = 0.; term_polyjm = 0.; term_polyim = 0.
                   ! polynomial coefficient
-                  if(opt .eq. 'mean') then
-                      term_poly  = (iceH_c/2)**5*gs_weightm(k2)/4./iceH_c  
+                  if(opt == 'mean') then
+                      if(iceH_c   /= 0) term_poly   = (iceH_c  /2)**4*gs_weightm(k2)/(4.*2.)  
+                      if(iceH_jm1 /= 0) term_polyjm = (iceH_jm1/2)**4*gs_weightm(k2)/(4.*2.)  
+                      if(iceH_im1 /= 0) term_polyim = (iceH_im1/2)**4*gs_weightm(k2)/(4.*2.)  
                   elseif(zh > 0.) then
-                      term_poly  = coef_poly(k1)*(zh*iceH_c/2.)**4*(2.*zr/zh)**(4-k1)*gs_weight(k2,k1) 
+                      if(iceH_c   /= 0) term_poly   = coef_poly(k1)*(zh*iceH_c /2.)**4*(2.*zr/zh)**(4-k1)*gs_weight(k2,k1) 
+                      if(iceH_jm1 /= 0) term_polyjm = coef_poly(k1)*(zh*iceH_jm1/2.)**4*(2.*zr/zh)**(4-k1)*gs_weight(k2,k1) 
+                      if(iceH_im1 /= 0) term_polyim = coef_poly(k1)*(zh*iceH_im1/2.)**4*(2.*zr/zh)**(4-k1)*gs_weight(k2,k1) 
                   end if
-                  cons_int    = cons_int   + constitutive_equation(T_Gauss  )*term_poly*sighrz**2
-                  cons_intjm  = cons_intjm + constitutive_equation(T_Gaussjm)*term_poly*sighrzjm**2
-                  cons_intim  = cons_intim + constitutive_equation(T_Gaussim)*term_poly*sighrzim**2
+                  cons_int    = cons_int   + consititutive_equation(T_Gauss  )*term_poly  *sighrz**2
+                  cons_intjm  = cons_intjm + consititutive_equation(T_Gaussjm)*term_polyjm*sighrzjm**2
+                  cons_intim  = cons_intim + consititutive_equation(T_Gaussim)*term_polyim*sighrzim**2
               end do
-          !if(j.eq.38.and.i.eq.42) print*,term_poly,zh,zr,gs_node(2,k1)
           end do
 
           ! ice surface gradient
@@ -257,41 +282,40 @@ subroutine ice_sheet_velocity(ice_zs,ice_H1,ice_Tcoef, dyy, dxlat, ice_vx, ice_v
               dZdx = 0.
           else
               dZ = (iceZ_c - iceZ_jm1)
-              if ( dZ.gt. iceH_c  ) dZ =  iceH_c   ! gradient larger than thickness at j+1
-              if ( dZ.lt.-iceH_jm1) dZ = -iceH_jm1 ! gradient larger than thickness at j-1
+ !             if ( dZ.gt. iceH_c  ) dZ =  iceH_c   ! gradient larger than thickness at j+1
+ !             if ( dZ.lt.-iceH_jm1) dZ = -iceH_jm1 ! gradient larger than thickness at j-1
               dZdx = dZ/dxlat(i)
           end if
 
           dZ = (iceZ_c - iceZ_im1)
-          if ( dZ.gt. iceH_c  ) dZ =  iceH_c   ! gradient larger than thickness at j+1
-          if ( dZ.lt.-iceH_im1) dZ = -iceH_im1 ! gradient larger than thickness at j-1
+ !         if ( dZ.gt. iceH_c  ) dZ =  iceH_c   ! gradient larger than thickness at j+1
+ !         if ( dZ.lt.-iceH_im1) dZ = -iceH_im1 ! gradient larger than thickness at j-1
           dZdy = dZ/dyy
 
-          ice_vx(j,i)   = -2.*rho_ice*g*dZdx*(cons_int+cons_intjm)/2.
-          ice_vy(j,i)   = -2.*rho_ice*g*dZdy*(cons_int+cons_intim)/2.
-          term_sig(j,i) = 2*(sighrz*zr*iceH_c)**4*constitutive_equation(T_layer)
+          ice_vx(j,i)   = -2.*rho_ice*grav*dZdx*(cons_int+cons_intjm)/2.
+          ice_vy(j,i)   = -2.*rho_ice*grav*dZdy*(cons_int+cons_intim)/2.
+          term_sig(j,i) = 2*(sighrz*zr*iceH_c)**4*consititutive_equation(T_layer)
       end do
   end do
 
   contains 
-       real function constitutive_equation(T_Gauss)
+       real function consititutive_equation(T_Gauss)
+       USE mo_physics, ONLY: A_fact, actene, R_gas, ice_Tcons, enh_fact
        implicit none
-       real,parameter     :: R_air     = 8.314
        real               :: T_Gauss
-       if(T_Gauss > 263.15) then
-           constitutive_equation =  1.96e3*exp(-1.39e5/R_air/T_Gauss)*3
+       if(T_Gauss > ice_Tcons) then
+           consititutive_equation =  A_fact(1)*exp(-actene(1)/R_gas/T_Gauss)*enh_fact
        else
-           constitutive_equation =  3.985e-13*exp(-6e4/R_air/T_Gauss)*3
+           consititutive_equation =  A_fact(2)*exp(-actene(2)/R_gas/T_Gauss)*enh_fact
        end if
        end function 
 
        real function sigma_horizon(ice_zs, ice_H1, ind_zonal, ind_merid, dxlat, dy)
+       USE mo_numerics, ONLY: xdim, ydim
+       USE mo_physics, ONLY: rho_ice, grav 
        implicit none
        integer, external  :: cycle_ind
-       integer, parameter :: xdim = 96, ydim = 48          ! field dimensions
        integer            :: ind_zonal, ind_merid, ind_zonal_real
-       real,parameter     :: g         = 9.8
-       real,parameter     :: rho_ice   = 910.
        real               :: iceZ_jp1, iceZ_jm1, iceZ_ip1, iceZ_im1
        real               :: iceH_jp1, iceH_jm1, iceH_ip1, iceH_im1
        real               :: dZdx_c, dZdy_c, dZ
@@ -317,46 +341,79 @@ subroutine ice_sheet_velocity(ice_zs,ice_H1,ice_Tcoef, dyy, dxlat, ice_vx, ice_v
             dx = dxlat(ind_merid)
        end if
        dZ     = (iceZ_jp1 - iceZ_jm1)
-        if ( dZ.gt. iceH_jp1) dZ =  iceH_jp1 ! gradient larger than thickness at j+1
-        if ( dZ.lt.-iceH_jm1) dZ = -iceH_jm1 ! gradient larger than thickness at j-1
+ !!       if ( dZ.gt. iceH_jp1) dZ =  iceH_jp1 ! gradient larger than thickness at j+1
+ !       if ( dZ.lt.-iceH_jm1) dZ = -iceH_jm1 ! gradient larger than thickness at j-1
        dZdx_c = dZ/(2.*dx)
        dZ     = (iceZ_ip1 - iceZ_im1)
-        if ( dZ.gt. iceH_ip1) dZ =  iceH_ip1 ! gradient larger than thickness at i+1
-        if ( dZ.lt.-iceH_im1) dZ = -iceH_im1 ! gradient larger than thickness at i-1
+ !       if ( dZ.gt. iceH_ip1) dZ =  iceH_ip1 ! gradient larger than thickness at i+1
+ !       if ( dZ.lt.-iceH_im1) dZ = -iceH_im1 ! gradient larger than thickness at i-1
        dZdy_c = dZ/(2.*dy)
-       sigma_horizon  = rho_ice*g*sqrt(dZdx_c**2+dZdy_c**2)
+       sigma_horizon  = rho_ice*grav*sqrt(dZdx_c**2+dZdy_c**2)
        end function 
 
 end subroutine
 
-subroutine ice_regression_coef(ice_T1, ice_Tcoef)
+subroutine ice_regression_coef(T1, Tcoef)
    implicit none
-   integer, parameter :: xdim = 96, ydim = 48          ! field dimensions
-   integer            :: i, j, k1, k2
-   real               :: sum_var
-   real,parameter     :: pi        = 3.1416 
-   real,dimension(4,4):: rg_coef   = reshape((/-0.250, 0.750, 0.750, -0.250,&
+   integer             :: k1, k2
+   real                :: sum_var
+   real,dimension(4,4) :: rg_coef   = reshape((/-0.250, 0.750, 0.750, -0.250,&
                                              0.250,	-1.299,	1.299, -0.250,&
                                              0.750,	-0.750,	-0.750,	0.750,&
                                              -0.750,	1.299,	-1.299,	0.750/),(/4,4/))
-   real, dimension(xdim,ydim,4)   :: ice_T1, ice_Tcoef
-   do i = 1,ydim
-      do j = 1,xdim
-         do k1 = 1,4
-             sum_var = 0
-             do k2 = 1,4
-                  sum_var = sum_var + rg_coef(k2,k1)*ice_T1(j,i,k2)
-             end do
-             ice_Tcoef(j,i,k1) = sum_var
-         end do
-      end do
+   real, dimension(4)  :: T1, Tcoef
+   do k1 = 1,4
+       sum_var = 0
+       do k2 = 1,4
+            sum_var = sum_var + rg_coef(k2,k1)*T1(k2)
+       end do
+       Tcoef(k1) = sum_var
    end do
 end subroutine
 
+subroutine ice_temperature_diffusion(T1_ini, H1_ini, zeta, dif)
+  USE mo_numerics, ONLY: xdim, ydim
+  USE mo_physics, ONLY: d_ice_max, ice_kappa, cp_ice, rho_ice
+  implicit none
+  integer, parameter   :: tstp_dif = 500 
+  integer, parameter   :: kdim     = 4 
+  real                 :: dt        = 365*86400/2           ! time step [s]
+  
+  integer              :: i, j, k, nday
+  real                 :: dTdz2, T0_diff, T1_diff 
+  real,dimension(kdim)    :: Tcoef, dT_diff, zeta, dzeta 
+
+  real                 :: ice_H1, H1_ini
+  real, dimension(kdim)   :: ice_T1, ice_T0, T1_ini
+  real, dimension(kdim)   :: dif
+  ice_H1 = H1_ini; ice_T1 = T1_ini
+  dzeta(kdim) = zeta(kdim) - zeta(kdim-1)
+  do k = 1,kdim-1
+      dzeta(k) = zeta(k+1) - zeta(k)
+  end do
+
+  do nday = 1,tstp_dif
+      call ice_regression_coef(ice_T1, Tcoef)
+      if(ice_H1 < d_ice_max) then 
+          dT_diff = 0
+      else
+          do k = 2,kdim-1
+              dTdz2 = 2*((ice_T1(k+1)-ice_T1(k))/dzeta(k)-(ice_T1(k)-ice_T1(k-1))/dzeta(k-1))/(dzeta(k+1)+dzeta(k)) 
+              dT_diff(k) = dt/tstp_dif*dTdz2*ice_kappa/(cp_ice*rho_ice)
+          end do
+          dT_diff(1) = dT_diff(2)
+      end if
+      ice_T0 = ice_T1 + dT_diff
+      ice_T1 = ice_T0
+  end do
+  dif = ice_T0 - T1_ini
+
+end subroutine
+
 subroutine flux_operator(ice_Hx, ice_Hy, crantx, cranty, fu, fv)
+  USE mo_numerics, ONLY: xdim, ydim
   implicit none
   integer, external             :: cycle_ind
-  integer, parameter            :: xdim = 96, ydim = 48          ! field dimensions
   integer                       :: i, j, k 
   real                          :: iceH_indp2, iceH_indp1, iceH_ind, iceH_indm1, iceH_indm2 
   real                          :: xl, xr, dx1, dx2, dx3, fl, df, f6 
@@ -368,7 +425,7 @@ subroutine flux_operator(ice_Hx, ice_Hy, crantx, cranty, fu, fv)
   
   do i = 1,ydim
       do j = 1,xdim
-          if(crantx(j,i).eq.0. .and. cranty(j,i).eq.0.) cycle
+      if(crantx(j,i)==0. .and. cranty(j,i)==0.) cycle
           ! x direction
           crant_intx = int(crantx(j,i))
           crant_frax = crantx(j,i) - float(crant_intx)
@@ -400,7 +457,6 @@ subroutine flux_operator(ice_Hx, ice_Hy, crantx, cranty, fu, fv)
           call ppm(iceH_indm2, iceH_indm1, iceH_ind, iceH_indp1, iceH_indp2, fl, df, f6)
           dx1 = xr-xl; dx2 = xr*xr-xl*xl; dx3 = xr*xr*xr-xl*xl*xl;
           fu(j,i) = fu(j,i) + sign(fl*dx1+0.5*df*dx2+f6*(0.5*dx2-dx3/3.0), crant_frax);
-          
           ! y direction
           crant_inty = int(cranty(j,i))
           crant_fray = cranty(j,i) - float(crant_inty)
@@ -492,9 +548,9 @@ end subroutine
 
 
 subroutine meridion_shift(ice_H1, ind_zonal, ind_merid, ice_nounb)
+ USE mo_numerics, ONLY: xdim, ydim
  implicit none
  integer, external          :: cycle_ind
- integer, parameter         :: xdim = 96, ydim = 48          ! field dimensions
  integer                    :: ind_zonal, ind_merid
  real                       :: ice_nounb
  real, dimension(xdim,ydim) :: ice_H1
