@@ -95,7 +95,7 @@ set log_omega_ext=1 #force vertical velocity omega with external file (0=no forc
 set log_ice_sheet=1 #force vertical velocity omega with external file (0=no forcing; 1=forcing)
 
 # length of sensitivity experiment in years
-set YEARS=100
+set YEARS=10000
 
 # for EXP = 35 choose here a value between -250 and 900 (with an increment of 25) for the obliquity:
 # => possible range: [-250 (= -25deg),  900 (= +90deg)], todays value 225 (=22.5deg)
@@ -116,7 +116,7 @@ set CO2input=none
 ### gfortran compiler (Linux (e.g. Ubuntu), Unix or MacBook Air)
 # gfortran -fopenmp -march=native -O3 -ffast-math -funroll-loops greb.model.mscm.f90 greb.shell.mscm.f90 -o greb.x
 #gfortran -Ofast -ffast-math -funroll-loops -fopenmp greb.model.mscm.f90 greb.shell.mscm.f90 -o greb.x
-gfortran -Ofast -ffast-math -funroll-loops -fopenmp greb.model.mscm.f90 greb.shell.mscm.f90 -o greb.x
+gfortran -Ofast -ffast-math -funroll-loops -fopenmp ./ice.sheet.standalone.f90 greb.shell.mscm.f90 -o greb.x
 ### ifoCrtran compiler (Mac)
 # ifort -assume byterecl -O3 -xhost -align all -fno-alias greb.model.mscm.f90 greb.shell.mscm.f90 -o greb.x
 ### g95 compiler (other Linux)
@@ -178,7 +178,7 @@ time_scnr = $YEARS  	! length of scenario run [yrs]
 EOF
 
 # run model
-./greb.x
+time ./greb.x
 
 # postprocessing
 # create output directory if does not already exist
@@ -220,51 +220,51 @@ if ( $EXP == 240 ) set FILENAME=exp-${EXP}.forced.elnino.erainterim.${log_tsurf_
 if ( $EXP == 241 ) set FILENAME=exp-${EXP}.forced.lanina.erainterim.${log_tsurf_ext}${log_hwind_ext}${log_omega_ext}
 if ( $EXP == 310 ) set FILENAME=exp-${EXP}.forced.climatechange.ensemblemean.${log_tsurf_ext}${log_hwind_ext}${log_omega_ext}
 
-# rename scenario run output and move it to output folder
-mv /Volumes/YMI/research_data/GREB_10kyr/scenario.bin /Volumes/YMI/research_data/GREB_10kyr/scenario.${FILENAME}.bin
-mv /Volumes/YMI/research_data/GREB_10kyr/scenario.gmean.bin /Volumes/YMI/research_data/GREB_10kyr/scenario.gmean.${FILENAME}.bin
-
-# calculate months of scenario run for header file
+## rename scenario run output and move it to output folder
+#mv /Volumes/YMI/research_data/GREB_10kyr/scenario.bin /Volumes/YMI/research_data/GREB_10kyr/scenario.${FILENAME}.bin
+#mv /Volumes/YMI/research_data/GREB_10kyr/scenario.gmean.bin /Volumes/YMI/research_data/GREB_10kyr/scenario.gmean.${FILENAME}.bin
+#
+## calculate months of scenario run for header file
 @ MONTHS = $YEARS * 12
-
-# scenario run
-cat >/Volumes/YMI/research_data/GREB_10kyr/scenario.${FILENAME}.ctl <<EOF
-dset ^scenario.${FILENAME}.bin
-undef 9.e27
-xdef  96 linear 0 3.75
-ydef  48 linear -88.125 3.75
-zdef   1 linear 1 1
-tdef $MONTHS linear 15jan0  1mo
-vars 8
-tsurf  1 0 tsurf
-tatmos 1 0 tatmos
-tocean 1 0 tocean
-vapor  1 0 vapour
-ice    1 0 ice
-precip 1 0 precip
-eva 1 0 eva
-qcrcl 1 0 qcrcl
-endvars
-EOF
-
-cat >/Volumes/YMI/research_data/GREB_10kyr/scenario.gmean.${FILENAME}.ctl <<EOF
-dset ^scenario.gmean.${FILENAME}.bin
-undef 9.e27
-xdef 12 linear 0 3.75
-ydef  1 linear -88.125 3.75
-zdef  $YEARS linear 1 1
-tdef  1 linear 15jan0  1mo
-vars 8
-tsurf  1 0 tsurf
-tatmos 1 0 tatmos
-tocean 1 0 tocean
-vapor  1 0 vapour
-ice    1 0 ice
-precip 1 0 precip
-eva 1 0 eva
-qcrcl 1 0 qcrcl
-endvars
-EOF
+#
+## scenario run
+#cat >/Volumes/YMI/research_data/GREB_10kyr/scenario.${FILENAME}.ctl <<EOF
+#dset ^scenario.${FILENAME}.bin
+#undef 9.e27
+#xdef  96 linear 0 3.75
+#ydef  48 linear -88.125 3.75
+#zdef   1 linear 1 1
+#tdef $MONTHS linear 15jan0  1mo
+#vars 8
+#tsurf  1 0 tsurf
+#tatmos 1 0 tatmos
+#tocean 1 0 tocean
+#vapor  1 0 vapour
+#ice    1 0 ice
+#precip 1 0 precip
+#eva 1 0 eva
+#qcrcl 1 0 qcrcl
+#endvars
+#EOF
+#
+#cat >/Volumes/YMI/research_data/GREB_10kyr/scenario.gmean.${FILENAME}.ctl <<EOF
+#dset ^scenario.gmean.${FILENAME}.bin
+#undef 9.e27
+#xdef 12 linear 0 3.75
+#ydef  1 linear -88.125 3.75
+#zdef  $YEARS linear 1 1
+#tdef  1 linear 15jan0  1mo
+#vars 8
+#tsurf  1 0 tsurf
+#tatmos 1 0 tatmos
+#tocean 1 0 tocean
+#vapor  1 0 vapour
+#ice    1 0 ice
+#precip 1 0 precip
+#eva 1 0 eva
+#qcrcl 1 0 qcrcl
+#endvars
+#EOF
 
 if( $EXP == 310 ) then
 # rename scenario run output and move it to output folder
@@ -281,7 +281,7 @@ tdef $MONTHS linear 15jan0  1mo
 vars 3
 ts  1 0 ice surface temperature
 h 1 0 ice thickness
-ice 1 0 ice type
+zs 1 0 ice surface height
 endvars
 EOF
 
@@ -295,7 +295,7 @@ tdef  1 linear 15jan0  1mo
 vars 3 
 ts  1 0 ice surface temperature
 h 1 0 ice thickness
-ice 1 0 ice type
+zs 1 0 ice surface height
 endvars 
 EOF
 

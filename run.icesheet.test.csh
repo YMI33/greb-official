@@ -2,18 +2,14 @@
 #
 # run script for scenario experiments with the Globally Resolved Energy Balance (GREB) Model
 #
-# m author: Tobias Bayr and Dietmar Dommenget
-
-# load module for compiler
-#module load intel-fc/16.0.3.210
-#module load intel-cc/16.0.3.210
-#module load openmpi/1.10.2
+# author: Tobias Bayr and Dietmar Dommenget
 
 # create work directory if does not already exist
-if (! -d work ) mkdir work
+set WORKDIR='work' 
+if (! -d ./${WORKDIR} ) mkdir ./${WORKDIR}
+if (-d ./${WORKDIR}) rm -f ./${WORKDIR}/*
 
 # else clean up work directory
-if (-d work ) rm -f work/*
 
 
 # possible sensitivity experiments and suggested/maximum experiment length in years
@@ -62,8 +58,7 @@ if (-d work ) rm -f work/*
 #  EXP = 240 & 241 run a El Nino (La Nina) experiment with forced boundary conditions
 #            (surface temperature, hodrizontal winds and omega) of the ERA-Interim
 #            composite mean response
-#
-#  EXP = 310 run a climate model with ice sheet scheme          
+#  EXP = 310 run a ice sheet included experiment
 #
 #
 # some general remarks to the sensitivity experiments:
@@ -80,7 +75,6 @@ if (-d work ) rm -f work/*
 # - EXP 95-99 are IPCC scenarios, where the CO2 data is available
 #   for the years given in brackets from 1950 onward
 # - EXP 100: you can run the model with your own CO2 forcing,
-# - EXP 3xx are model with ice sheet scheme
 #   which should be in the format [year co2] like for the IPCC scenarios
 #   and variable "FILENAME" below should be the same name as your CO2 forcing file, but without '.txt'
 
@@ -98,10 +92,10 @@ set EXP=310
 set log_tsurf_ext=1 #force surface temperature with external file (0=no forcing; 1=forcing)
 set log_hwind_ext=1 #force horizontal winds with external file (0=no forcing; 1=forcing)
 set log_omega_ext=1 #force vertical velocity omega with external file (0=no forcing; 1=forcing)
-set log_ice_sheet=1 #switch of ice sheet scheme
+set log_ice_sheet=1 #force vertical velocity omega with external file (0=no forcing; 1=forcing)
 
 # length of sensitivity experiment in years
-set YEARS=99999
+set YEARS=10000
 
 # for EXP = 35 choose here a value between -250 and 900 (with an increment of 25) for the obliquity:
 # => possible range: [-250 (= -25deg),  900 (= +90deg)], todays value 225 (=22.5deg)
@@ -121,15 +115,12 @@ set CO2input=none
 ### compile GREB model (uncomment one of these three options)
 ### gfortran compiler (Linux (e.g. Ubuntu), Unix or MacBook Air)
 # gfortran -fopenmp -march=native -O3 -ffast-math -funroll-loops greb.model.mscm.f90 greb.shell.mscm.f90 -o greb.x
-gfortran -Ofast -ffast-math -funroll-loops -fopenmp greb.imodel.mscm.f90 -o greb.x
-# gfortran -Ofast -ffast-math -funroll-loops -fopenmp greb.model.mscm.f90 greb.shell.mscm.f90 -o greb.x
-### ifortran compiler (Mac)
+#gfortran -Ofast -ffast-math -funroll-loops -fopenmp greb.model.mscm.f90 greb.shell.mscm.f90 -o greb.x
+gfortran -Ofast -ffast-math -funroll-loops -fopenmp greb.model.mscm.f90 greb.shell.mscm.f90 -o greb.x
+### ifoCrtran compiler (Mac)
 # ifort -assume byterecl -O3 -xhost -align all -fno-alias greb.model.mscm.f90 greb.shell.mscm.f90 -o greb.x
 ### g95 compiler (other Linux)
 # g95 greb.model.mscm.f90 greb.shell.mscm.f90 -o greb.x
-# NCI RAIJIN
-# scott wales
-# ifort -O3 -xHost -g -traceback -qopt-report -fp-model fast ice_sheet_test.f90 greb.shell.mscm.f90 -o ./greb.x
 
 
 ###################
@@ -140,22 +131,23 @@ setenv OMP_NUM_THREADS 6
 setenv KMP_AFFINITY verbose,none
 
 # move complied files to work directory
-mv greb.x work/.
-mv *.mod work/.
+mv greb.x ./${WORKDIR}/
+mv *.mod ./${WORKDIR}/
 
 # change to work directory
-cd work
+cd ./${WORKDIR}
 
 # link solar forcing for paleo and orbital scenarios
 set SOLSCEN='nosolfile'
 touch nosolfile
-set INDIR='../input/solar_forcing_scenarios/'
+set INDIR='~/Documents/GREB/greb-official/input/solar_forcing_scenarios/'
 if ( $EXP == 30 ) set SOLSCEN=${INDIR}'greb.solar.231K_hybers.corrected.bin'
 if ( $EXP == 31 ) set SOLSCEN=${INDIR}'greb.solar.231K_hybers.corrected.bin'
 if ( $EXP == 35 ) set SOLSCEN=${INDIR}'greb.solar.obliquity.'${OBL}'.bin'
 if ( $EXP == 36 ) set SOLSCEN=${INDIR}'greb.solar.eccentricity.'${ECC}'.bin'
+if ( $EXP == 310) set SOLSCEN=${INDIR}'greb.solar.231K_hybers.corrected.bin'
 # link solar forcing scenario
-# ln -s $SOLSCEN solar_scenario
+ln -s $SOLSCEN solar_scenario
 
 # link CO2 forcing for IPCC RCP scenarios
 set CO2='noco2file'
@@ -166,7 +158,7 @@ if ( $EXP == 98 ) set CO2='../input/ipcc.scenario.rcp6.forcing.txt'
 if ( $EXP == 99 ) set CO2='../input/ipcc.scenario.rcp85.forcing.txt'
 if ( $EXP == 100 ) set CO2='../input/'${CO2input}'.txt'
 # link CO2 forcing file
-# ln -s $CO2 co2forcing
+ln -s $CO2 co2forcing
 
 #  generate namelist
 cat >namelist <<EOF
@@ -186,7 +178,7 @@ time_scnr = $YEARS  	! length of scenario run [yrs]
 EOF
 
 # run model
-time ./greb.x
+./greb.x
 
 # postprocessing
 # create output directory if does not already exist
@@ -226,28 +218,93 @@ if ( $EXP == 100 ) set FILENAME=exp-${EXP}.${CO2input}
 if ( $EXP == 230 ) set FILENAME=exp-${EXP}.forced.climatechange.ensemblemean.${log_tsurf_ext}${log_hwind_ext}${log_omega_ext}
 if ( $EXP == 240 ) set FILENAME=exp-${EXP}.forced.elnino.erainterim.${log_tsurf_ext}${log_hwind_ext}${log_omega_ext}
 if ( $EXP == 241 ) set FILENAME=exp-${EXP}.forced.lanina.erainterim.${log_tsurf_ext}${log_hwind_ext}${log_omega_ext}
-if ( $EXP == 310 ) set FILENAME=exp-${EXP}.ice.sheet.${log_tsurf_ext}${log_hwind_ext}${log_omega_ext}
-
-# calculate months of scenario run for header file
-@ MONTHS = $YEARS * 2
-
-
-# echo ' '
+if ( $EXP == 310 ) set FILENAME=exp-${EXP}.forced.climatechange.ensemblemean.${log_tsurf_ext}${log_hwind_ext}${log_omega_ext}
 
 # rename scenario run output and move it to output folder
-# mv ice_scheme_test.bin ../output/ice_scheme_test.bin
+mv /Volumes/YMI/research_data/GREB_10kyr/scenario.bin /Volumes/YMI/research_data/GREB_10kyr/scenario.${FILENAME}.bin
+mv /Volumes/YMI/research_data/GREB_10kyr/scenario.gmean.bin /Volumes/YMI/research_data/GREB_10kyr/scenario.gmean.${FILENAME}.bin
+
+# calculate months of scenario run for header file
+@ MONTHS = $YEARS * 12
+
 # scenario run
-cat >/Volumes/YMI/research_data/GREB_10kyr/output/scenario_ice_sheet.${FILENAME}.ctl <<EOF
+cat >/Volumes/YMI/research_data/GREB_10kyr/scenario.${FILENAME}.ctl <<EOF
+dset ^scenario.${FILENAME}.bin
+undef 9.e27
+xdef  96 linear 0 3.75
+ydef  48 linear -88.125 3.75
+zdef   1 linear 1 1
+tdef $MONTHS linear 15jan0  1mo
+vars 8
+tsurf  1 0 tsurf
+tatmos 1 0 tatmos
+tocean 1 0 tocean
+vapor  1 0 vapour
+ice    1 0 ice
+precip 1 0 precip
+eva 1 0 eva
+qcrcl 1 0 qcrcl
+endvars
+EOF
+
+cat >/Volumes/YMI/research_data/GREB_10kyr/scenario.gmean.${FILENAME}.ctl <<EOF
+dset ^scenario.gmean.${FILENAME}.bin
+undef 9.e27
+xdef 12 linear 0 3.75
+ydef  1 linear -88.125 3.75
+zdef  $YEARS linear 1 1
+tdef  1 linear 15jan0  1mo
+vars 8
+tsurf  1 0 tsurf
+tatmos 1 0 tatmos
+tocean 1 0 tocean
+vapor  1 0 vapour
+ice    1 0 ice
+precip 1 0 precip
+eva 1 0 eva
+qcrcl 1 0 qcrcl
+endvars
+EOF
+
+if( $EXP == 310 ) then
+# rename scenario run output and move it to output folder
+mv /Volumes/YMI/research_data/GREB_10kyr/scenario_ice_sheet.bin /Volumes/YMI/research_data/GREB_10kyr/scenario_ice_sheet.${FILENAME}.bin
+mv /Volumes/YMI/research_data/GREB_10kyr/scenario_ice_sheet.gmean.bin /Volumes/YMI/research_data/GREB_10kyr/scenario_ice_sheet.gmean.${FILENAME}.bin
+# scenario run
+cat >/Volumes/YMI/research_data/GREB_10kyr/scenario_ice_sheet.${FILENAME}.ctl <<EOF
 dset ^scenario_ice_sheet.${FILENAME}.bin
 undef 9.e27
 xdef  96 linear 0 3.75
 ydef  48 linear -88.125 3.75
 zdef   1 linear 1 1
-tdef $MONTHS linear 15jan0001  1mo
+tdef $MONTHS linear 15jan0  1mo
 vars 3
 ts  1 0 ice surface temperature
+h 1 0 ice thickness
+zs 1 0 ice surface height
 endvars
 EOF
 
+cat >/Volumes/YMI/research_data/GREB_10kyr/scenario_ice_sheet.gmean.${FILENAME}.ctl <<EOF
+dset ^scenario_ice_sheet.gmean.${FILENAME}.bin
+undef 9.e27
+xdef 12 linear 0 3.75
+ydef  1 linear -88.125 3.75
+zdef  $YEARS linear 1 1
+tdef  1 linear 15jan0  1mo
+vars 3 
+ts  1 0 ice surface temperature
+h 1 0 ice thickness
+zs 1 0 ice surface height
+endvars 
+EOF
+
+endif 
+
+
+# echo ' '
+# echo 'Convert output files to netcdf?'
+# cd ../output
+# sh ctl2nc.sh
 
 exit

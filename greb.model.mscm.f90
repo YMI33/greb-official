@@ -208,6 +208,7 @@ module mo_physics
   parameter( cq_rain   = -0.1/24./3600. )          ! decrease in air water vapor due to rain [1/s]
   parameter( z_air     = 8400. )                   ! scaling height atmos. heat, CO2
   parameter( z_vapor   = 5000. )                   ! scaling height atmos. water vapor diffusion
+  parameter( garma_air = -6.5e-3 )                   ! scaling height atmos. water vapor diffusion
   parameter( grav      = 9.81  )                   ! gravitational acceleration [m/s^2]
   real :: r_qviwv   = 2.6736e3                     ! regres. factor between viwv and q_air  [kg/m^3]
 
@@ -222,6 +223,7 @@ module mo_physics
 
 ! declare climate fields
   real, dimension(xdim,ydim)          ::  z_topo, glacier,z_ocean
+  real, dimension(xdim,ydim)          ::  iceH_clim
   real, dimension(xdim,ydim,nstep_yr) ::  Tclim, uclim, vclim, omegaclim, omegastdclim, wsclim
   real, dimension(xdim,ydim,nstep_yr) ::  qclim, mldclim, Toclim, cldclim
   real, dimension(xdim,ydim,nstep_yr) ::  TF_correct, qF_correct, ToF_correct, swetclim, dTrad
@@ -297,7 +299,7 @@ subroutine greb_model
 ! declare temporary fields
   real, dimension(xdim,ydim)   :: Ts0, Ts1, Ta0, Ta1, To0, To1, q0, q1,       &
 &                                 ts_ini, ta_ini, q_ini, to_ini,              &
-&                                 iceH_ini,ice_Ts0, ice_Ts1, ice_H1, ice_H0,  & 
+&                                 ice_Ts0, ice_Ts1, ice_H1, ice_H0,  & 
 &                                 z_surf
   real, dimension(xdim,ydim,4) :: ice_T1, ice_T0
 
@@ -347,7 +349,7 @@ subroutine greb_model
   Ta_ini   = Ts_ini                                       ! initial value atm. temp.
   To_ini   = Toclim(:,:,nstep_yr)                         ! initial value temp. surf
   q_ini    = qclim(:,:,nstep_yr)                          ! initial value atmos water vapor
-  iceH_ini = 0.                                           ! initial ice sheet thickness
+  iceH_ini = iceH_clim                                    ! initial value ice sheet thickness
 
   !CO2_ctrl = 340.0
   CO2_ctrl = 200.0
