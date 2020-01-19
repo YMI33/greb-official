@@ -7,7 +7,7 @@ subroutine ice_sheet(it, ionum, irec, mon, ice_H1, ice_T1, ice_Ts1, Ta1, dT_ocea
   USE mo_numerics, ONLY: xdim, ydim, ndt_days, ndays_yr, ireal, &
 &                        dlon, dlat, jday_mon, icestep, dt_ice
   USE mo_physics, ONLY: pi, cp_ice, rho_ice, d_ice_max, d_ice_mov,&
-&                       Tl_ice2, jday, z_topo, garma_air
+&                       Tl_ice2, jday, z_topo, garma_air, log_ice_dyn
   implicit none
   character(len=37)  :: dirname
   real,parameter     :: gs_layer = 1/sqrt(3.)
@@ -24,8 +24,8 @@ subroutine ice_sheet(it, ionum, irec, mon, ice_H1, ice_T1, ice_Ts1, Ta1, dT_ocea
   real, dimension(xdim,ydim) :: z_surf                  ! surface height [m]
 
   real, dimension(xdim,ydim)     :: ice_H1, ice_H0, ice_zs, ice_mask
-  real, dimension(xdim,ydim)     :: ice_Ts1, ice_Ts0
-  real, dimension(xdim,ydim)     :: term_mass, dice_Ts, dT_hcorrect, term_hadv
+  real, dimension(xdim,ydim)     :: ice_Ts1, ice_Ts0, dice_Ts
+  real, dimension(xdim,ydim)     :: term_mass, term_calv, dT_hcorrect, term_hadv
   real, dimension(xdim,ydim+1)   :: crantx, cranty, fu, fv, ice_vx, ice_vy
   real, dimension(xdim,ydim,4)   :: ice_T1, ice_T0, ice_Tcoef
   real, dimension(xdim,ydim,4)   :: term_sig, term_dif, term_tadv, dice_T
@@ -39,9 +39,9 @@ subroutine ice_sheet(it, ionum, irec, mon, ice_H1, ice_T1, ice_Ts1, Ta1, dT_ocea
 
   ice_zs    = z_topo+ice_H1
 
-  term_hadv = 0.; term_mass = 0.; dice_Ts = 0.
+  term_hadv = 0.; term_mass = 0.; term_calv = 0.; dice_Ts = 0.
   term_tadv = 0.; term_dif = 0.; term_sig = 0.; dice_T = 0.
-  if (  (jday == 1 .or. jday == icestep + 1)                &
+  if (  (jday == 1 .or. jday == icestep + 1).and. log_ice_dyn == 1 &
 &      .and. it/float(ndt_days) == nint(it/float(ndt_days)) ) then
       ! ice temperature profile estimate and vertical diffusion
       ice_T1(:,:,4) = ice_Ts1
@@ -71,7 +71,9 @@ subroutine ice_sheet(it, ionum, irec, mon, ice_H1, ice_T1, ice_Ts1, Ta1, dT_ocea
 
   ! ice thickness equation
   ice_H0  = ice_H1 + term_hadv + term_mass
+  term_calv = ice_H0
   where(z_topo == -0.1) ice_H0 = 0; ! may be changed
+  term_calv = ice_H0 - term_calv
   ! ice surface temperature equation
   dT_hcorrect = (ice_H0-ice_H1)*garma_air
   ice_Ts0 = ice_Ts1 + dT_ocean + dice_Ts + dT_hcorrect
@@ -90,7 +92,7 @@ subroutine ice_sheet(it, ionum, irec, mon, ice_H1, ice_T1, ice_Ts1, Ta1, dT_ocea
   
   ! ice sheet output
   ice_iunit = 100 + ionum
-  call ice_output(it, ice_iunit, irec, mon, ice_Ts0, ice_H0, z_surf, term_mass)
+  call ice_output(it, ice_iunit, irec, mon, ice_Ts0, ice_H0, z_surf, term_mass, term_hadv, term_calv)
 
 end subroutine
 
@@ -127,7 +129,7 @@ subroutine ice_mass_balance(ice_H1, ice_Ts1, Ta1, dq_rain, wz_vapor, Fn_surf, dT
   call ice_fusion( ice_fus, ice_melt, ice_Ts1, ice_H1, Fn_surf, dT_ocean) 
   
   ! mass balance 
-  where(z_topo >= 0) term_mass = dt* (ice_snf + ice_melt)
+  where(z_topo /= -0.1) term_mass = dt* (ice_snf + ice_melt)
   
   ! ice surface temperature
   !Tmin_limit = 40
@@ -287,9 +289,9 @@ subroutine ice_sheet_velocity_and_stress(ice_zs,ice_H1,ice_Tcoef, dyy, dxlat, ic
                       if(iceH_jm1 /= 0) term_polyjm = coef_poly(k1)*(zh*iceH_jm1/2.)**4*(2.*zr/zh)**(4-k1)*gs_weight(k2,k1) 
                       if(iceH_im1 /= 0) term_polyim = coef_poly(k1)*(zh*iceH_im1/2.)**4*(2.*zr/zh)**(4-k1)*gs_weight(k2,k1) 
                   end if
-                  cons_int    = cons_int   + consititutive_equation(T_Gauss  )*term_poly  *sighrz**2
-                  cons_intjm  = cons_intjm + consititutive_equation(T_Gaussjm)*term_polyjm*sighrzjm**2
-                  cons_intim  = cons_intim + consititutive_equation(T_Gaussim)*term_polyim*sighrzim**2
+                  cons_int    = cons_int   + constitutive_equation(T_Gauss  )*term_poly  *sighrz**2
+                  cons_intjm  = cons_intjm + constitutive_equation(T_Gaussjm)*term_polyjm*sighrzjm**2
+                  cons_intim  = cons_intim + constitutive_equation(T_Gaussim)*term_polyim*sighrzim**2
               end do
           end do
 
@@ -304,26 +306,25 @@ subroutine ice_sheet_velocity_and_stress(ice_zs,ice_H1,ice_Tcoef, dyy, dxlat, ic
               dZ = (iceZ_c - iceZ_jm1)
               dZdx = dZ/dxlat(i)
           end if
-
           dZ = (iceZ_c - iceZ_im1)
           dZdy = dZ/dyy
 
           ice_vx(j,i)   = -2.*rho_ice*grav*dZdx*(cons_int+cons_intjm)/2.
           ice_vy(j,i)   = -2.*rho_ice*grav*dZdy*(cons_int+cons_intim)/2.
-          sigma_e(j,i) = 2*(sighrz*zr*iceH_c)**4*consititutive_equation(T_layer)
+          sigma_e(j,i)  = 2*(sighrz*zr*iceH_c)**4*constitutive_equation(T_layer)
       end do
   end do
 
   contains 
-       real function consititutive_equation(T_Gauss)
+       real function constitutive_equation(T_Gauss)
        USE mo_physics, ONLY: A_fact, actene, R_gas, ice_Tcons, enh_fact
        implicit none
        real               :: T_Gauss
-       T_Gauss = 0.
-       if(T_Gauss > ice_Tcons .and. T_Gauss /= 0) then
-           consititutive_equation =  A_fact(1)*exp(-actene(1)/R_gas/T_Gauss)*enh_fact
+       constitutive_equation = 0.
+       if(T_Gauss > ice_Tcons) then
+           constitutive_equation =  A_fact(1)*exp(-actene(1)/R_gas/T_Gauss)*enh_fact
        else
-           consititutive_equation =  A_fact(2)*exp(-actene(2)/R_gas/T_Gauss)*enh_fact
+           constitutive_equation =  A_fact(2)*exp(-actene(2)/R_gas/T_Gauss)*enh_fact
        end if
        end function 
 
@@ -652,27 +653,32 @@ integer function cycle_ind(x,xdim)
    endif
 end function
 
-subroutine ice_output(it, ice_iunit, irec, mon, ice_Ts0, ice_H0, z_surf, term_mass)
+subroutine ice_output(it, ice_iunit, irec, mon, ice_Ts0, ice_H0, z_surf, &
+&                     term_mass, term_hadv, term_calv)
 !+++++++++++++++++++++++++++++++++++++++
 ! ice sheet : output file
   USE mo_numerics,     ONLY: xdim, ydim, jday_mon, ndt_days, nstep_yr, time_scnr &
 &                          , time_ctrl, ireal, dt
   USE mo_physics,      ONLY: jday, log_exp, r_qviwv, wz_vapor, cap_ice
-  use mo_diagnostics,  ONLY: ice_Tsmm, ice_Tsmn_ctrl, ice_Hmn_ctrl, ice_mask_ctrl
+  use mo_diagnostics,  ONLY: ice_Tsmm, ice_Tsmn_ctrl, ice_Hmn_ctrl, ice_mask_ctrl &
+&                          , term_massmm, term_mass_ctrl, term_hadvmm, term_hadv_ctrl & 
+&                          , term_calvmm, term_calv_ctrl 
   implicit none
   real, external              :: gmean
-  real, dimension(xdim,ydim)  :: ice_H0, ice_Ts0, ice_mask, melt, term_mass, U_gtmlt, term_massmm
+  real, dimension(xdim,ydim)  :: ice_H0, ice_Ts0, ice_mask, melt 
+  real, dimension(xdim,ydim)  :: term_hadv, term_mass, term_calv
   real, dimension(xdim,ydim)  :: z_surf 
-  integer, parameter          :: nvar = 3              ! number of output variable
+  integer, parameter          :: nvar = 6              ! number of output variable
   integer                     :: it,irec,mon,iyrec     ! work variable for count, controled by subroutine output
   integer                     :: ndm                   ! total time for mean calculation
   integer                     :: ice_iunit            ! written file uint
 
   ! diagnostics: monthly means
-  ice_mask = 0.; term_massmm = 0.
   where(ice_H0 > 0.) ice_mask = 1.
   ice_Tsmm = ice_Tsmm+ice_Ts0
   term_massmm = term_massmm + term_mass
+  term_hadvmm = term_hadvmm + term_hadv
+  term_calvmm = term_calvmm + term_calv
   
 ! control output
   if (       jday == sum(jday_mon(1:mon))                   &
@@ -684,13 +690,18 @@ subroutine ice_output(it, ice_iunit, irec, mon, ice_Ts0, ice_H0, z_surf, term_ma
          write(ice_iunit,rec=nvar*irec+1)  ice_Tsmm/ndm
          write(ice_iunit,rec=nvar*irec+2)  ice_H0
          write(ice_iunit,rec=nvar*irec+3)  z_surf
+         write(ice_iunit,rec=nvar*irec+4)  term_massmm
+         write(ice_iunit,rec=nvar*irec+5)  term_hadvmm
+         write(ice_iunit,rec=nvar*irec+6)  term_calvmm
          else
          ice_Tsmn_ctrl(:,:,mon)  = ice_Tsmm/ndm
          ice_Hmn_ctrl(:,:,mon)   = ice_H0
          ice_mask_ctrl(:,:,mon)  = z_surf
+         term_mass_ctrl(:,:,mon)  = term_massmm/ndm
+         term_hadv_ctrl(:,:,mon)  = term_hadvmm/ndm
          end if
      end if
-     ice_Tsmm=0.
+     ice_Tsmm=0.;term_massmm=0.;term_hadvmm=0.; term_calvmm=0.
   end if
 
 ! scenario output
@@ -702,11 +713,17 @@ subroutine ice_output(it, ice_iunit, irec, mon, ice_Ts0, ice_H0, z_surf, term_ma
      write(ice_iunit,rec=nvar*irec+1)  ice_Tsmm/ndm
      write(ice_iunit,rec=nvar*irec+2)  ice_H0
      write(ice_iunit,rec=nvar*irec+3)  z_surf
+     write(ice_iunit,rec=nvar*irec+4)  term_massmm
+     write(ice_iunit,rec=nvar*irec+5)  term_hadvmm
+     write(ice_iunit,rec=nvar*irec+6)  term_calvmm
 
      write(203,rec=               12*iyrec+mon) gmean(ice_Tsmm/ndm - ice_Tsmn_ctrl(:,:,mon))
      write(203,rec=1*12*time_scnr+12*iyrec+mon) gmean(ice_H0 -ice_Hmn_ctrl(:,:,mon))
      write(203,rec=2*12*time_scnr+12*iyrec+mon) gmean(z_surf -ice_mask_ctrl(:,:,mon))
-     ice_Tsmm=0.; term_massmm=0.
+     write(203,rec=3*12*time_scnr+12*iyrec+mon) gmean(term_massmm/ndm -term_mass_ctrl(:,:,mon))
+     write(203,rec=4*12*time_scnr+12*iyrec+mon) gmean(term_hadvmm/ndm -term_hadv_ctrl(:,:,mon))
+     write(203,rec=5*12*time_scnr+12*iyrec+mon) gmean(term_calvmm/ndm -term_calv_ctrl(:,:,mon))
+     ice_Tsmm=0.;term_hadvmm=0.; term_massmm=0.; term_calvmm=0.
   end if
 
 end subroutine ice_output

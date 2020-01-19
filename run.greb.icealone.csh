@@ -278,10 +278,13 @@ xdef  96 linear 0 3.75
 ydef  48 linear -88.125 3.75
 zdef   1 linear 1 1
 tdef $MONTHS linear 15jan0  1mo
-vars 3
+vars 6
 ts  1 0 ice surface temperature
 h 1 0 ice thickness
 zs 1 0 ice surface height
+mass 1 0 mass balance
+adv 1 0 advection term
+calv 1 0 calving
 endvars
 EOF
 
@@ -292,10 +295,13 @@ xdef 12 linear 0 3.75
 ydef  1 linear -88.125 3.75
 zdef  $YEARS linear 1 1
 tdef  1 linear 15jan0  1mo
-vars 3 
+vars 6 
 ts  1 0 ice surface temperature
 h 1 0 ice thickness
 zs 1 0 ice surface height
+mass 1 0 mass balance
+adv 1 0 advection term
+calv 1 0 calving
 endvars 
 EOF
 
