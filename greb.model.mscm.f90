@@ -284,7 +284,7 @@ module mo_diagnostics
 &                                        ice_Hmm, ice_Tsmm, term_massmm, term_hadvmm, term_calvmm
   real, dimension(xdim,ydim,12)       :: Tmn_ctrl, Tamn_ctrl, Tomn_ctrl, ice_Hmn_ctrl, ice_Tsmn_ctrl, ice_mask_ctrl
   real, dimension(xdim,ydim,12)       :: qmn_ctrl, icmn_ctrl, prmn_ctrl, evamn_ctrl, qcrclmn_ctrl 
-  real, dimension(xdim,ydim,12)       :: term_mass_ctrl, term_hadv_ctrl, term_calv_ctl 
+  real, dimension(xdim,ydim,12)       :: term_mass_ctrl, term_hadv_ctrl, term_calv_ctrl 
 
 end module mo_diagnostics
 

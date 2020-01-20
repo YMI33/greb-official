@@ -122,7 +122,6 @@ gfortran -Ofast -ffast-math -funroll-loops -fopenmp greb.model.mscm.f90 greb.she
 ### g95 compiler (other Linux)
 # g95 greb.model.mscm.f90 greb.shell.mscm.f90 -o greb.x
 
-
 ###################
 # END USER INPUT! #
 ###################
@@ -178,7 +177,7 @@ time_scnr = $YEARS  	! length of scenario run [yrs]
 EOF
 
 # run model
-./greb.x
+time ./greb.x
 
 # postprocessing
 # create output directory if does not already exist
@@ -226,7 +225,7 @@ mv /Volumes/YMI/research_data/GREB_10kyr/scenario.gmean.bin /Volumes/YMI/researc
 
 # calculate months of scenario run for header file
 @ MONTHS = $YEARS * 12
-
+#
 # scenario run
 cat >/Volumes/YMI/research_data/GREB_10kyr/scenario.${FILENAME}.ctl <<EOF
 dset ^scenario.${FILENAME}.bin
@@ -278,10 +277,13 @@ xdef  96 linear 0 3.75
 ydef  48 linear -88.125 3.75
 zdef   1 linear 1 1
 tdef $MONTHS linear 15jan0  1mo
-vars 3
+vars 6
 ts  1 0 ice surface temperature
 h 1 0 ice thickness
 zs 1 0 ice surface height
+mass 1 0 mass balance
+adv 1 0 advection term
+calv 1 0 calving
 endvars
 EOF
 
@@ -292,10 +294,13 @@ xdef 12 linear 0 3.75
 ydef  1 linear -88.125 3.75
 zdef  $YEARS linear 1 1
 tdef  1 linear 15jan0  1mo
-vars 3 
+vars 6 
 ts  1 0 ice surface temperature
 h 1 0 ice thickness
 zs 1 0 ice surface height
+mass 1 0 mass balance
+adv 1 0 advection term
+calv 1 0 calving
 endvars 
 EOF
 

@@ -75,12 +75,12 @@ read(20,rec=1)  glacier
 read(21,rec=1)  sw_solar_ctrl
 
 ! ice sheet scenario
-if ( log_exp .eq. 310) then
-  open(51,file='../input/global.bedrock.bin',  	ACCESS='DIRECT',FORM='UNFORMATTED', RECL=ireal*xdim*ydim)
-  read(51,rec=1)  z_topo
-  open(52,file='../input/ETOPO1.ice.sheet.bin',  	ACCESS='DIRECT',FORM='UNFORMATTED', RECL=ireal*xdim*ydim)
-  read(52,rec=1)  iceH_clim
-end if
+!if ( log_exp .eq. 310) then
+!  open(51,file='../input/global.bedrock.bin',  	ACCESS='DIRECT',FORM='UNFORMATTED', RECL=ireal*xdim*ydim)
+!  read(51,rec=1)  z_topo
+!  open(52,file='../input/ETOPO1.ice.sheet.bin',  	ACCESS='DIRECT',FORM='UNFORMATTED', RECL=ireal*xdim*ydim)
+!  read(52,rec=1)  iceH_clim
+!end if
 
 ! read scenario solar forcing for paleo scenarios or oribital forcings
 if ( log_exp .eq. 30 .or. log_exp .eq. 31 .or. log_exp .eq. 35 .or. log_exp .eq. 36 .or. log_exp .eq. 310 ) then

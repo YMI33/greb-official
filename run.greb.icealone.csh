@@ -95,7 +95,7 @@ set log_omega_ext=1 #force vertical velocity omega with external file (0=no forc
 set log_ice_sheet=1 #force vertical velocity omega with external file (0=no forcing; 1=forcing)
 
 # length of sensitivity experiment in years
-set YEARS=10000
+set YEARS=1
 
 # for EXP = 35 choose here a value between -250 and 900 (with an increment of 25) for the obliquity:
 # => possible range: [-250 (= -25deg),  900 (= +90deg)], todays value 225 (=22.5deg)

@@ -697,8 +697,9 @@ subroutine ice_output(it, ice_iunit, irec, mon, ice_Ts0, ice_H0, z_surf, &
          ice_Tsmn_ctrl(:,:,mon)  = ice_Tsmm/ndm
          ice_Hmn_ctrl(:,:,mon)   = ice_H0
          ice_mask_ctrl(:,:,mon)  = z_surf
-         term_mass_ctrl(:,:,mon)  = term_massmm/ndm
-         term_hadv_ctrl(:,:,mon)  = term_hadvmm/ndm
+         term_mass_ctrl(:,:,mon)  = term_massmm
+         term_hadv_ctrl(:,:,mon)  = term_hadvmm
+         term_calv_ctrl(:,:,mon)  = term_calvmm
          end if
      end if
      ice_Tsmm=0.;term_massmm=0.;term_hadvmm=0.; term_calvmm=0.
@@ -720,9 +721,9 @@ subroutine ice_output(it, ice_iunit, irec, mon, ice_Ts0, ice_H0, z_surf, &
      write(203,rec=               12*iyrec+mon) gmean(ice_Tsmm/ndm - ice_Tsmn_ctrl(:,:,mon))
      write(203,rec=1*12*time_scnr+12*iyrec+mon) gmean(ice_H0 -ice_Hmn_ctrl(:,:,mon))
      write(203,rec=2*12*time_scnr+12*iyrec+mon) gmean(z_surf -ice_mask_ctrl(:,:,mon))
-     write(203,rec=3*12*time_scnr+12*iyrec+mon) gmean(term_massmm/ndm -term_mass_ctrl(:,:,mon))
-     write(203,rec=4*12*time_scnr+12*iyrec+mon) gmean(term_hadvmm/ndm -term_hadv_ctrl(:,:,mon))
-     write(203,rec=5*12*time_scnr+12*iyrec+mon) gmean(term_calvmm/ndm -term_calv_ctrl(:,:,mon))
+     write(203,rec=3*12*time_scnr+12*iyrec+mon) gmean(term_massmm -term_mass_ctrl(:,:,mon))
+     write(203,rec=4*12*time_scnr+12*iyrec+mon) gmean(term_hadvmm -term_hadv_ctrl(:,:,mon))
+     write(203,rec=5*12*time_scnr+12*iyrec+mon) gmean(term_calvmm -term_calv_ctrl(:,:,mon))
      ice_Tsmm=0.;term_hadvmm=0.; term_massmm=0.; term_calvmm=0.
   end if
 
