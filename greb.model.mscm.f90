@@ -306,18 +306,16 @@ subroutine greb_model
 &                                 z_surf
   real, dimension(xdim,ydim,4) :: ice_T1, ice_T0
 
-  character(len=37):: dir
 
 ! open output files
-  dir = '/Volumes/YMI/research_data/GREB_10kyr'
-  open(101,file=dir//'/control.bin',ACCESS='DIRECT',FORM='UNFORMATTED', RECL=ireal*xdim*ydim)
-  open(102,file=dir//'/scenario.bin',ACCESS='DIRECT',FORM='UNFORMATTED', RECL=ireal*xdim*ydim)
-  open(103,file=dir//'/scenario.gmean.bin',ACCESS='DIRECT',FORM='UNFORMATTED', RECL=ireal)
+  open(101,file='./control.bin',ACCESS='DIRECT',FORM='UNFORMATTED', RECL=ireal*xdim*ydim)
+  open(102,file='./scenario.bin',ACCESS='DIRECT',FORM='UNFORMATTED', RECL=ireal*xdim*ydim)
+  open(103,file='./scenario.gmean.bin',ACCESS='DIRECT',FORM='UNFORMATTED', RECL=ireal)
 
   if(log_ice_sheet==1) then
-      open(201,file=dir//'/control_ice_sheet.bin',ACCESS='DIRECT',FORM='UNFORMATTED', RECL=ireal*xdim*ydim)
-      open(202,file=dir//'/scenario_ice_sheet.bin',ACCESS='DIRECT',FORM='UNFORMATTED', RECL=ireal*xdim*ydim)
-      open(203,file=dir//'/scenario_ice_sheet.gmean.bin',ACCESS='DIRECT',FORM='UNFORMATTED', RECL=ireal)
+      open(201,file='./control_ice_sheet.bin',ACCESS='DIRECT',FORM='UNFORMATTED', RECL=ireal*xdim*ydim)
+      open(202,file='./scenario_ice_sheet.bin',ACCESS='DIRECT',FORM='UNFORMATTED', RECL=ireal*xdim*ydim)
+      open(203,file='./scenario_ice_sheet.gmean.bin',ACCESS='DIRECT',FORM='UNFORMATTED', RECL=ireal)
   end if
 
 

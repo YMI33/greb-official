@@ -9,29 +9,50 @@ subroutine ice_sheet(it, ionum, irec, mon, ice_H1, ice_T1, ice_Ts1, Ta1, dT_ocea
   USE mo_physics, ONLY: pi, cp_ice, rho_ice, d_ice_max, d_ice_mov,&
 &                       Tl_ice2, jday, z_topo, garma_air, log_ice_dyn
   implicit none
-  character(len=37)  :: dirname
-  real,parameter     :: gs_layer = 1/sqrt(3.)
-  real,dimension(4)  :: zeta = (/-1.,-gs_layer,gs_layer,1./)
-  integer                    :: ice_iunit              ! file unit of ice sheet data
+  real,parameter             :: gs_layer = 1/sqrt(3.)   
+  real,dimension(4)          :: zeta = (/-1.,-gs_layer,gs_layer,1./) ! model layer
+  integer                    :: ice_iunit               ! file unit of ice sheet data
   integer                    :: ionum                   ! file unit of GREB
   integer                    :: i, j, k, it, irec, mon  ! work variable for count
+  
+  real                       :: deg                      ! degree-length conversion [m/deg]
+  real                       :: dx                       ! degree difference for zonal direction
+  real                       :: dy                       ! degree difference for meridian direction
+  real                       :: dyy                      ! meridional grid width [m]
+  integer, dimension(ydim)   :: ilat = (/(i,i=1,ydim)/)  ! index for latitude grid
+  real, dimension(ydim)      :: lat                      ! latitude [deg]
+  real, dimension(ydim)      :: dxlat                    ! zonal grid width [m]
+
+  ! input variable
   real, dimension(xdim,ydim) :: Fn_surf                 ! surface net heat flux [J/m2]
   real, dimension(xdim,ydim) :: dT_ocean                ! ocean temperature change [K]
-  real, dimension(xdim,ydim) :: Ta1, ice_Ta1            ! air temperature [K]
-  real, dimension(xdim,ydim) :: ice_snf                  ! snowfall accumulation rate [kg/m2/s]
+  real, dimension(xdim,ydim) :: Ta1                     ! air temperature [K]
   real, dimension(xdim,ydim) :: dq_rain                 ! precipitation estimate (always negative) [m]
   real, dimension(xdim,ydim) :: wz_vapor                ! surface pressure change coefficient [1]
   real, dimension(xdim,ydim) :: z_surf                  ! surface height [m]
 
-  real, dimension(xdim,ydim)     :: ice_H1, ice_H0, ice_zs, ice_mask
-  real, dimension(xdim,ydim)     :: ice_Ts1, ice_Ts0, dice_Ts
-  real, dimension(xdim,ydim)     :: term_mass, term_calv, dT_hcorrect, term_hadv
-  real, dimension(xdim,ydim+1)   :: crantx, cranty, fu, fv, ice_vx, ice_vy
-  real, dimension(xdim,ydim,4)   :: ice_T1, ice_T0, ice_Tcoef
-  real, dimension(xdim,ydim,4)   :: term_sig, term_dif, term_tadv, dice_T
-  real, dimension(ydim)          :: lat, dxlat
-  real                           :: deg, dx, dy, dyy
-  integer, dimension(ydim)       :: ilat = (/(i,i=1,ydim)/)
+  real, dimension(xdim,ydim) :: ice_H0                  ! ice thickness (forward) [m]
+  real, dimension(xdim,ydim) :: ice_H1                  ! ice thickness (current) [m]
+  real, dimension(xdim,ydim) :: ice_zs                  ! ice surface height [m]
+  real, dimension(xdim,ydim) :: ice_Ts0                 ! ice surface temperature (forward) [K]
+  real, dimension(xdim,ydim) :: ice_Ts1                 ! ice surface temperature (current) [K]
+
+  real, dimension(xdim,ydim) :: term_mass               ! ice thickness tendency due to mass balance [m] 
+  real, dimension(xdim,ydim) :: term_calv               ! ice thickness tendency due to calving [m] 
+  real, dimension(xdim,ydim) :: term_hadv               ! ice thickness tendency due to advection [m]
+  real, dimension(xdim,ydim) :: dice_Ts                 ! ice surface temperature tendency due to energy balance [K] 
+  real, dimension(xdim,ydim) :: dT_hcorrect             ! ice surface temperature tendency due to altitude correction [K] 
+
+  real, dimension(xdim,ydim+1)   :: ice_vx, ice_vy      ! ice velocity at zonal (x) and meridian (y) direction [m/s]
+  real, dimension(xdim,ydim,4)   :: ice_T1              ! ice strata temperature (current) [k] 
+  real, dimension(xdim,ydim,4)   :: ice_T0              ! ice strata temperature (forward) [k] 
+  real, dimension(xdim,ydim,4)   :: ice_Tcoef           ! regression coefficient of ice layer temperature [k] 
+
+  real, dimension(xdim,ydim,4)   :: term_sig            ! ice strata temperature tendency due to strain rate [K]
+  real, dimension(xdim,ydim,4)   :: term_dif            ! ice strata temperature tendency due to diffusion [K]
+  real, dimension(xdim,ydim,4)   :: term_tadv           ! ice strata temperature tendency due to advection [K]
+  real, dimension(xdim,ydim,4)   :: dice_T              ! ice strata temperature tendency [K]
+
 
   deg = 2.*pi*6.371e6/360.;   ! length of 1deg latitude [m]
   dx = dlon; dy=dlat; dyy=dy*deg
@@ -41,6 +62,7 @@ subroutine ice_sheet(it, ionum, irec, mon, ice_H1, ice_T1, ice_Ts1, Ta1, dT_ocea
 
   term_hadv = 0.; term_mass = 0.; term_calv = 0.; dice_Ts = 0.
   term_tadv = 0.; term_dif = 0.; term_sig = 0.; dice_T = 0.
+!+++++++++++++++++++++++++++++ dynamic core  +++++++++++++++++++++++++++++++++++++++++++++++++++++++++
   if (  (jday == 1 .or. jday == icestep + 1).and. log_ice_dyn == 1 &
 &      .and. it/float(ndt_days) == nint(it/float(ndt_days)) ) then
       ! ice temperature profile estimate and vertical diffusion
@@ -51,12 +73,14 @@ subroutine ice_sheet(it, ionum, irec, mon, ice_H1, ice_T1, ice_Ts1, Ta1, dT_ocea
             call ice_temperature_diffusion(ice_T1(j,i,:), ice_H1(j,i), zeta, term_dif(j,i,:))
          end do
       end do
-      ! mean velocity 
+      ! ice thickness tendency
+      ! vertical mean velocity 
       ice_vx = 0.; ice_vy = 0.
       call ice_sheet_velocity_and_stress(ice_zs,ice_H1,ice_Tcoef, dyy, dxlat, ice_vx, ice_vy, 0., term_sig, 'mean')
       ! ice thickness advection
       call ice_advection(ice_vx,ice_vy,ice_H1,term_hadv, dyy, dxlat, lat)
-      
+     
+      ! ice temperature tendency
       do k = 1,4
           ! velocity and stress term at 4 layers
           ice_vx = 0.; ice_vy = 0.
@@ -66,6 +90,7 @@ subroutine ice_sheet(it, ionum, irec, mon, ice_H1, ice_T1, ice_Ts1, Ta1, dT_ocea
           call ice_advection(ice_vx,ice_vy,ice_T1(:,:,k),term_tadv(:,:,k), dyy, dxlat, lat)
       end do
   end if
+!+++++++++++++++++++++++++++++ dynamic core  +++++++++++++++++++++++++++++++++++++++++++++++++++++++++
   ! mass balance
   call ice_mass_balance(ice_H1, ice_Ts1, Ta1, dq_rain, wz_vapor, Fn_surf, dT_ocean, dice_Ts, term_mass)
 
@@ -73,16 +98,18 @@ subroutine ice_sheet(it, ionum, irec, mon, ice_H1, ice_T1, ice_Ts1, Ta1, dT_ocea
   ice_H0  = ice_H1 + term_hadv + term_mass
   term_calv = ice_H0
   where(z_topo == -0.1) ice_H0 = 0; ! may be changed
-  term_calv = ice_H0 - term_calv
+  term_calv = ice_H0 - term_calv    ! calving
+  
   ! ice surface temperature equation
-  dT_hcorrect = (ice_H0-ice_H1)*garma_air
+  dT_hcorrect = (ice_H0-ice_H1)*garma_air  ! temperature change due to altitude 
   ice_Ts0 = ice_Ts1 + dT_ocean + dice_Ts + dT_hcorrect
+  
   ! ice temperature equation
   dice_T = term_tadv + term_dif + term_sig
   where(dice_T > Tl_ice2-ice_T1) dice_T = 0.9*(Tl_ice2-ice_T1) ! numeric stability
   ice_T0 = ice_T1 + dice_T
   do k = 1,4
-      where(ice_H1 == 0 .and. ice_H0 > 0) ice_T0(:,:,k) = ice_Ts0 
+      where(ice_H1 == 0 .and. ice_H0 > 0.) ice_T0(:,:,k) = ice_Ts0 
   end do
   
   !print*,ice_H0(38,41), ice_vy(38,41),cranty(38,42),ice_vy(38,42)*86400
@@ -104,14 +131,12 @@ subroutine ice_mass_balance(ice_H1, ice_Ts1, Ta1, dq_rain, wz_vapor, Fn_surf, dT
   real, dimension(xdim,ydim) :: ice_Ts1                 ! ice surface temperature (current) [K]
   real, dimension(xdim,ydim) :: Fn_surf                 ! surface net heat flux [J/m2]
   real, dimension(xdim,ydim) :: dT_ocean                ! ocean temperature change [K]
-  real, dimension(xdim,ydim) :: U_gtmlt                 ! ocean temperature change [K]
 
   real, dimension(xdim,ydim) :: ice_H0                  ! ice thickness (forward) [m]
   real, dimension(xdim,ydim) :: ice_H1                  ! ice thickness (current) [m]
-  real, dimension(xdim,ydim) :: ice_snf                 ! snowfall accumulation rate [m]
-  real, dimension(xdim,ydim) :: ice_melt                ! ice melting accumulation [m]
+  real, dimension(xdim,ydim) :: ice_snf                 ! snowfall accumulation rate [m/s]
+  real, dimension(xdim,ydim) :: ice_melt                ! ice melting rate (negative -> melting) [m/s]
   real, dimension(xdim,ydim) :: ice_fus                 ! ice melting latent heat [W/m2]
-  real, dimension(xdim,ydim) :: ice_cover               ! ice cover type [-1~0:partial ice sheet;0 land;0~1 partial sea ice]
 
   real, dimension(xdim,ydim) :: Ta1                     ! air temperature [K]
   real, dimension(xdim,ydim) :: dq_rain                 ! precipitation estimate (always negative) [m]
@@ -119,7 +144,6 @@ subroutine ice_mass_balance(ice_H1, ice_Ts1, Ta1, dq_rain, wz_vapor, Fn_surf, dT
 
   real                       :: Tmin_limit              ! no very low Tsurf/Tatmoss;  numerical stability
   real, dimension(xdim,ydim) :: dice_Ts                 ! ice temperature total tendency [K]
-  real, dimension(xdim,ydim) :: term_lat               !  ice temperature tendency due to fusion latent heat [K] 
   real, dimension(xdim,ydim) :: term_mass               ! ice thickness tendency due to mass balance [m] 
 
   dice_Ts = 0.; term_mass = 0.
@@ -148,7 +172,7 @@ subroutine ice_accumulation(ice_snf, ice_Ts1, Ta1, dq_rain, wz_vapor)
   implicit none
   real, dimension(xdim,ydim) :: ice_Ts1                 ! ice surface temperature [K] 
   real, dimension(xdim,ydim) :: Ta1                     ! air temperature [K]
-  real, dimension(xdim,ydim) :: ice_snf                  ! snowfall accumulation rate [kg/m2/s]
+  real, dimension(xdim,ydim) :: ice_snf                 ! snowfall accumulation rate [kg/m2/s]
   real, dimension(xdim,ydim) :: dq_rain                 ! precipitation estimate (always negative) [m]
   real, dimension(xdim,ydim) :: wz_vapor                ! surface pressure change coefficient [1]
   ice_snf = 0.
@@ -200,34 +224,54 @@ end subroutine ice_fusion
 subroutine ice_sheet_velocity_and_stress(ice_zs,ice_H1,ice_Tcoef, dyy, dxlat, ice_vx, ice_vy, zeta, sigma_e, opt)
   USE mo_numerics, ONLY: xdim, ydim
   USE mo_physics, ONLY: pi, rho_ice, grav, d_ice_mov 
+  ! NOTE: variable at point (j-1,i),(j,i-1), (j,i) is represented by _jm1, _im1 and _c respectively
   implicit none
-  integer, external  :: cycle_ind
-  character(len=4)   :: opt
-  integer            :: i, j, k1, k2, k3, ind_zonal_real
-  real               :: iceZ_jm1, iceZ_im1, iceZ_c, iceH_c,iceH_jm1, iceH_im1,dZ
-  real               :: sighrz, sighrzjm, sighrzim
-  real               :: T_layer, T_Gauss, T_Gaussjm, T_Gaussim, coef, coef_jm, coef_im
-  real               :: cons_int, cons_intjm, cons_intim, term_poly, term_polyjm, term_polyim
-  real               :: dZdx, dZdy
-  real               :: deg, dyy, zeta, zh, zr
-  real,dimension(4)  :: coef_poly  = (/1,3,3,1/)
-  real,dimension(3)  :: gs_nodem   = (/0.8920, -0.4678, 0.1598/)
-  real,dimension(3)  :: gs_weightm = (/3.4961,  2.5689, 0.3350/)
-  real,dimension(3,4):: gs_node    = reshape((/-0.7746, 0.0000, 0.7746,&
+
+  integer, external    :: cycle_ind
+  character(len=4)     :: opt                            ! option for velocity calculation (mean/levs)
+  integer              :: i, j, ind_zonal_real           ! work variable for count
+  integer              :: k1, k2, k3                     ! work variable for count
+  real                 :: zeta                           ! z-direction coordinate variable 
+  real                 :: zh                             ! percentage of ice above the selected layer
+  real                 :: zr                             ! percentage of ice below the selected layer
+
+  real                 :: T_layer                        ! layer temperature  [K]
+  real                 :: iceH_c,iceH_jm1, iceH_im1      ! ice thickness      [m]  
+  real                 :: T_Gauss, T_Gaussjm, T_Gaussim  ! temperature at Gauss point for Gaussian intergration [K]
+  real                 :: iceZ_jm1, iceZ_im1, iceZ_c     ! ice surface height [m]
+  real                 :: sighrz, sighrzjm, sighrzim     ! rho*g*|| del h ||  [kg/(m2 s2)]
+  real                 :: coef, coef_jm, coef_im         ! regression coefficient for strata temperature [K] 
+  real                 :: term_poly, term_polyjm, term_polyim   ! polynomial coefficient and integration parameter [m4]
+  real                 :: cons_int, cons_intjm, cons_intim      ! integration result [(m3 s)/kg]
+  real                 :: dZdx, dZdy, dZ                 ! ice surface height gradient
+
+  ! coefficient for Gaussian-Jacob integration: gs_node for node, gs_weight for weight, *m for whole column integration
+  real,dimension(4)    :: coef_poly  = (/1,3,3,1/)       
+  real,dimension(3)    :: gs_nodem   = (/0.8920, -0.4678, 0.1598/)
+  real,dimension(3)    :: gs_weightm = (/3.4961,  2.5689, 0.3350/)
+  real,dimension(3,4)  :: gs_node    = reshape((/-0.7746, 0.0000, 0.7746,&
                                                -0.8228,-0.1811, 0.5753,&
                                                -0.8540,-0.3060, 0.4100,&
                                                -0.8758,-0.3976, 0.2735/), (/3,4/))
-  real,dimension(3,4):: gs_weight  = reshape((/ 0.5556, 0.8889, 0.5556,&
+  real,dimension(3,4)  :: gs_weight  = reshape((/ 0.5556, 0.8889, 0.5556,&
                                                 0.8037, 0.9170, 0.2793,&
                                                 1.2571, 1.1700, 0.2396,&
                                                 2.063,  1.6736, 0.2637/),(/3,4/))
-  real, dimension(xdim,ydim)     :: iceZ_ini, ice_H1, ice_H0, ice_Hx, ice_Hy, ice_zs
-  real, dimension(xdim,ydim)     :: sigma_e
-  real, dimension(xdim,ydim,4)   :: ice_Tcoef
-  real, dimension(xdim,ydim+1)   :: ice_vx, ice_vy
-  real, dimension(ydim)          :: lat, dxlat, ccx
-  integer, dimension(ydim)       :: ilat = (/(i,i=1,ydim)/)
+  real, dimension(xdim,ydim) :: ice_H0                  ! ice thickness (forward) [m]
+  real, dimension(xdim,ydim) :: ice_H1                  ! ice thickness (current) [m]
+  real, dimension(xdim,ydim) :: ice_Hx                  ! ice thickness (x-direction for advection) [m]
+  real, dimension(xdim,ydim) :: ice_Hy                  ! ice thickness (y-direction for advection) [m]
+  real, dimension(xdim,ydim) :: ice_zs                  ! ice surface height [m]
+  real, dimension(xdim,ydim) :: sigma_e                 ! heating due to strain rate [W/m3]
+
+  real, dimension(xdim,ydim+1)   :: ice_vx, ice_vy      ! ice velocity at zonal (x) and meridian (y) direction [m/s]
+  real, dimension(xdim,ydim,4)   :: ice_Tcoef           ! regression coefficient of ice layer temperature [k] 
   
+  real, dimension(ydim)      :: lat                      ! latitude [deg]
+  real, dimension(ydim)      :: dxlat                    ! zonal grid width [m]
+  real                       :: deg                      ! degree-length conversion [m/deg]
+  real                       :: dyy                      ! meridional grid width [m]
+  integer, dimension(ydim)   :: ilat = (/(i,i=1,ydim)/)  ! index for latitude grid
 
   sigma_e = 0.
   zh = (zeta+1)/2
@@ -317,6 +361,7 @@ subroutine ice_sheet_velocity_and_stress(ice_zs,ice_H1,ice_Tcoef, dyy, dxlat, ic
 
   contains 
        real function constitutive_equation(T_Gauss)
+       ! constitutive equation based on Glen's flow law
        USE mo_physics, ONLY: A_fact, actene, R_gas, ice_Tcons, enh_fact
        implicit none
        real               :: T_Gauss
@@ -367,6 +412,66 @@ subroutine ice_sheet_velocity_and_stress(ice_zs,ice_H1,ice_Tcoef, dyy, dxlat, ic
 
 end subroutine
 
+subroutine ice_regression_coef(T1, Tcoef)
+   implicit none
+   integer             :: k1, k2
+   real                :: sum_var
+   real,dimension(4,4) :: rg_coef   = reshape((/-0.250, 0.750, 0.750, -0.250,&
+                                             0.250,	-1.299,	1.299, -0.250,&
+                                             0.750,	-0.750,	-0.750,	0.750,&
+                                             -0.750,	1.299,	-1.299,	0.750/),(/4,4/))
+   real, dimension(4)  :: T1, Tcoef
+   do k1 = 1,4
+       sum_var = 0
+       do k2 = 1,4
+            sum_var = sum_var + rg_coef(k2,k1)*T1(k2)
+       end do
+       Tcoef(k1) = sum_var
+   end do
+end subroutine
+
+subroutine ice_temperature_diffusion(T1_ini, H1_ini, zeta, dif)
+  USE mo_numerics, ONLY: xdim, ydim, dt_ice
+  USE mo_physics, ONLY: d_ice_mov, ice_kappa, cp_ice, rho_ice
+  implicit none
+  integer, parameter   :: tstp_dif = 100                 ! iteration number 
+  integer, parameter   :: kdim     = 4                   ! vertical layer
+  
+  integer              :: i, j, k, nday                  ! work variable for count
+  real                 :: H1_ini                         ! input ice thickness [m]
+  real                 :: dTdz2                          ! finite difference of 2-order derivative [K/m2]
+
+  real,dimension(kdim) :: zeta                           ! z-direction coordinate variable 
+  real ,dimension(kdim):: dzeta                          ! z grid width 
+
+  real,dimension(kdim) :: T1_ini                         ! input ice strata temperature [K]
+  real,dimension(kdim) :: ice_T0                         ! ice strata temperature for iteration (forward) [k]
+  real,dimension(kdim) :: ice_T1                         ! ice strata temperature for iteration (current) [K]
+  real,dimension(kdim) :: dT_diff                        ! temperature diffusion during iteration [K]
+  real,dimension(kdim) :: dif                            ! ice strata temperature tendency due to diffusions [K]
+  ice_T1 = T1_ini
+  dzeta(kdim) = zeta(kdim) - zeta(kdim-1)
+  do k = 1,kdim-1
+      dzeta(k) = zeta(k+1) - zeta(k)
+  end do
+
+  do nday = 1,tstp_dif
+      if(H1_ini < d_ice_mov) then 
+          dT_diff = 0
+      else
+          do k = 2,kdim-1
+              dTdz2 = 2*((ice_T1(k+1)-ice_T1(k))/dzeta(k)-(ice_T1(k)-ice_T1(k-1))/dzeta(k-1))/(dzeta(k+1)+dzeta(k)) 
+              dT_diff(k) = dt_ice/tstp_dif*dTdz2*ice_kappa/(cp_ice*rho_ice)
+          end do
+          dT_diff(1) = dT_diff(2)
+      end if
+      ice_T0 = ice_T1 + dT_diff
+      ice_T1 = ice_T0
+  end do
+  dif = ice_T0 - T1_ini
+
+end subroutine
+
 subroutine ice_advection(vx, vy, var1, term_adv, dyy, dxlat, lat)
   USE mo_numerics, ONLY: xdim, ydim, ndt_days, ndays_yr, ireal, &
                          dlon, dlat, dt_ice
@@ -400,62 +505,6 @@ subroutine ice_advection(vx, vy, var1, term_adv, dyy, dxlat, lat)
           term_adv(j,i) = - (fu(cycle_ind(j+1,xdim),i)-fu(j,i)) - (fv(j,i+1)-fv(j,i))/cos(lat(i)/180*pi)
       end do   
   end do
-
-end subroutine
-
-subroutine ice_regression_coef(T1, Tcoef)
-   implicit none
-   integer             :: k1, k2
-   real                :: sum_var
-   real,dimension(4,4) :: rg_coef   = reshape((/-0.250, 0.750, 0.750, -0.250,&
-                                             0.250,	-1.299,	1.299, -0.250,&
-                                             0.750,	-0.750,	-0.750,	0.750,&
-                                             -0.750,	1.299,	-1.299,	0.750/),(/4,4/))
-   real, dimension(4)  :: T1, Tcoef
-   do k1 = 1,4
-       sum_var = 0
-       do k2 = 1,4
-            sum_var = sum_var + rg_coef(k2,k1)*T1(k2)
-       end do
-       Tcoef(k1) = sum_var
-   end do
-end subroutine
-
-subroutine ice_temperature_diffusion(T1_ini, H1_ini, zeta, dif)
-  USE mo_numerics, ONLY: xdim, ydim, dt_ice
-  USE mo_physics, ONLY: d_ice_mov, ice_kappa, cp_ice, rho_ice
-  implicit none
-  integer, parameter   :: tstp_dif = 91 
-  integer, parameter   :: kdim     = 4 
-  
-  integer              :: i, j, k, nday
-  real                 :: dTdz2, T0_diff, T1_diff 
-  real,dimension(kdim)    :: Tcoef, dT_diff, zeta, dzeta 
-
-  real                 :: ice_H1, H1_ini
-  real, dimension(kdim)   :: ice_T1, ice_T0, T1_ini
-  real, dimension(kdim)   :: dif
-  ice_H1 = H1_ini; ice_T1 = T1_ini
-  dzeta(kdim) = zeta(kdim) - zeta(kdim-1)
-  do k = 1,kdim-1
-      dzeta(k) = zeta(k+1) - zeta(k)
-  end do
-
-  do nday = 1,tstp_dif
-      call ice_regression_coef(ice_T1, Tcoef)
-      if(ice_H1 < d_ice_mov) then 
-          dT_diff = 0
-      else
-          do k = 2,kdim-1
-              dTdz2 = 2*((ice_T1(k+1)-ice_T1(k))/dzeta(k)-(ice_T1(k)-ice_T1(k-1))/dzeta(k-1))/(dzeta(k+1)+dzeta(k)) 
-              dT_diff(k) = dt_ice/tstp_dif*dTdz2*ice_kappa/(cp_ice*rho_ice)
-          end do
-          dT_diff(1) = dT_diff(2)
-      end if
-      ice_T0 = ice_T1 + dT_diff
-      ice_T1 = ice_T0
-  end do
-  dif = ice_T0 - T1_ini
 
 end subroutine
 
@@ -595,22 +644,6 @@ subroutine flux_operator(ice_Hx, ice_Hy, crantx, cranty, fu, fv)
   end do
 end subroutine
 
-subroutine meridion_shift(ice_H1, ind_zonal, ind_merid, ice_nounb)
- USE mo_numerics, ONLY: xdim, ydim
- implicit none
- integer, external          :: cycle_ind
- integer                    :: ind_zonal, ind_merid
- real                       :: ice_nounb
- real, dimension(xdim,ydim) :: ice_H1
- if   (ind_merid.gt.ydim) then
-      ice_nounb = ice_H1(cycle_ind(ind_zonal+xdim/2,xdim),2*ydim+1-ind_merid)
- else if(ind_merid.lt.1 ) then
-      ice_nounb = ice_H1(cycle_ind(ind_zonal+xdim/2,xdim), 1-ind_merid)
- else 
-      ice_nounb = ice_H1(ind_zonal,ind_merid)
- end if
-end subroutine
-
 subroutine ppm(fm2, fm1, f, fp1, fp2, fl, df, f6)
   implicit none
   real :: fm2, fm1, f, fp1, fp2 
@@ -627,7 +660,7 @@ subroutine ppm(fm2, fm1, f, fp1, fp2, fl, df, f6)
   df = fr-fl;
 
   contains
-      real function mismatch(fm1, f, fp1)  ! half the slope calculation in (Colella & Woodward, 1984)
+      real function mismatch(fm1, f, fp1)  ! the slope calculation in (Colella & Woodward, 1984)
       real fm1, f, fp1, df, dfMin, dfMax
       if ((fp1-f)*(f-fm1) .gt. 0) then
           df       = (fp1 - fm1)*0.5
@@ -642,16 +675,34 @@ subroutine ppm(fm2, fm1, f, fp1, fp2, fl, df, f6)
 end
 
 integer function cycle_ind(x,xdim)
+! zonal grid shift, cyclic boundary condition
   implicit none
   integer :: x, xdim
   if(x < 1) then
-    cycle_ind = xdim + x
+    cycle_ind = xdim + x ! westmost
    else if(x > xdim) then
-    cycle_ind = x - xdim
+    cycle_ind = x - xdim ! eastmost
    else
-    cycle_ind = x
+    cycle_ind = x ! otherwise
    endif
 end function
+
+subroutine meridion_shift(ice_H1, ind_zonal, ind_merid, ice_nounb)
+! meridian grid shift (Allen et al., 1991)
+ USE mo_numerics, ONLY: xdim, ydim
+ implicit none
+ integer, external          :: cycle_ind
+ integer                    :: ind_zonal, ind_merid
+ real                       :: ice_nounb
+ real, dimension(xdim,ydim) :: ice_H1
+ if   (ind_merid.gt.ydim) then
+      ice_nounb = ice_H1(cycle_ind(ind_zonal+xdim/2,xdim),2*ydim+1-ind_merid) ! North Pole, move to opposite longitude 
+ else if(ind_merid.lt.1 ) then
+      ice_nounb = ice_H1(cycle_ind(ind_zonal+xdim/2,xdim), 1-ind_merid) ! South Pole, move to opposite longitude 
+ else 
+      ice_nounb = ice_H1(ind_zonal,ind_merid) ! otherwise
+ end if
+end subroutine
 
 subroutine ice_output(it, ice_iunit, irec, mon, ice_Ts0, ice_H0, z_surf, &
 &                     term_mass, term_hadv, term_calv)
@@ -671,7 +722,7 @@ subroutine ice_output(it, ice_iunit, irec, mon, ice_Ts0, ice_H0, z_surf, &
   integer, parameter          :: nvar = 6              ! number of output variable
   integer                     :: it,irec,mon,iyrec     ! work variable for count, controled by subroutine output
   integer                     :: ndm                   ! total time for mean calculation
-  integer                     :: ice_iunit            ! written file uint
+  integer                     :: ice_iunit             ! written file uint
 
   ! diagnostics: monthly means
   where(ice_H0 > 0.) ice_mask = 1.

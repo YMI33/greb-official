@@ -5,9 +5,10 @@
 # author: Tobias Bayr and Dietmar Dommenget
 
 # create work directory if does not already exist
-set WORKDIR='work' 
-if (! -d ./${WORKDIR} ) mkdir ./${WORKDIR}
-if (-d ./${WORKDIR}) rm -f ./${WORKDIR}/*
+if (! -d work ) mkdir work
+
+# else clean up work directory
+if (-d work ) rm -f work/*
 
 # else clean up work directory
 
@@ -95,7 +96,7 @@ set log_omega_ext=1 #force vertical velocity omega with external file (0=no forc
 set log_ice_sheet=1 #force vertical velocity omega with external file (0=no forcing; 1=forcing)
 
 # length of sensitivity experiment in years
-set YEARS=10000
+set YEARS=10
 
 # for EXP = 35 choose here a value between -250 and 900 (with an increment of 25) for the obliquity:
 # => possible range: [-250 (= -25deg),  900 (= +90deg)], todays value 225 (=22.5deg)
@@ -130,11 +131,11 @@ setenv OMP_NUM_THREADS 6
 setenv KMP_AFFINITY verbose,none
 
 # move complied files to work directory
-mv greb.x ./${WORKDIR}/
-mv *.mod ./${WORKDIR}/
+mv greb.x work/.
+mv *.mod work/.
 
 # change to work directory
-cd ./${WORKDIR}
+cd ./work
 
 # link solar forcing for paleo and orbital scenarios
 set SOLSCEN='nosolfile'
@@ -220,14 +221,14 @@ if ( $EXP == 241 ) set FILENAME=exp-${EXP}.forced.lanina.erainterim.${log_tsurf_
 if ( $EXP == 310 ) set FILENAME=exp-${EXP}.forced.climatechange.ensemblemean.${log_tsurf_ext}${log_hwind_ext}${log_omega_ext}
 
 # rename scenario run output and move it to output folder
-mv /Volumes/YMI/research_data/GREB_10kyr/scenario.bin /Volumes/YMI/research_data/GREB_10kyr/scenario.${FILENAME}.bin
-mv /Volumes/YMI/research_data/GREB_10kyr/scenario.gmean.bin /Volumes/YMI/research_data/GREB_10kyr/scenario.gmean.${FILENAME}.bin
+mv scenario.bin ../output/response.exp-${FILENAME}.bin
+mv scenario.gmean.bin ../output/response.gmean.exp-${FILENAME}.bin
 
 # calculate months of scenario run for header file
 @ MONTHS = $YEARS * 12
 #
 # scenario run
-cat >/Volumes/YMI/research_data/GREB_10kyr/scenario.${FILENAME}.ctl <<EOF
+cat >../output/scenario.${FILENAME}.ctl <<EOF
 dset ^scenario.${FILENAME}.bin
 undef 9.e27
 xdef  96 linear 0 3.75
@@ -246,7 +247,7 @@ qcrcl 1 0 qcrcl
 endvars
 EOF
 
-cat >/Volumes/YMI/research_data/GREB_10kyr/scenario.gmean.${FILENAME}.ctl <<EOF
+cat >../output/scenario.gmean.${FILENAME}.ctl <<EOF
 dset ^scenario.gmean.${FILENAME}.bin
 undef 9.e27
 xdef 12 linear 0 3.75
@@ -267,10 +268,10 @@ EOF
 
 if( $EXP == 310 ) then
 # rename scenario run output and move it to output folder
-mv /Volumes/YMI/research_data/GREB_10kyr/scenario_ice_sheet.bin /Volumes/YMI/research_data/GREB_10kyr/scenario_ice_sheet.${FILENAME}.bin
-mv /Volumes/YMI/research_data/GREB_10kyr/scenario_ice_sheet.gmean.bin /Volumes/YMI/research_data/GREB_10kyr/scenario_ice_sheet.gmean.${FILENAME}.bin
+mv scenario_ice_sheet.bin ../output/scenario_ice_sheet.${FILENAME}.bin
+mv scenario_ice_sheet.gmean.bin ../output/scenario_ice_sheet.gmean.${FILENAME}.bin
 # scenario run
-cat >/Volumes/YMI/research_data/GREB_10kyr/scenario_ice_sheet.${FILENAME}.ctl <<EOF
+cat >../output/scenario_ice_sheet.${FILENAME}.ctl <<EOF
 dset ^scenario_ice_sheet.${FILENAME}.bin
 undef 9.e27
 xdef  96 linear 0 3.75
@@ -287,7 +288,7 @@ calv 1 0 calving
 endvars
 EOF
 
-cat >/Volumes/YMI/research_data/GREB_10kyr/scenario_ice_sheet.gmean.${FILENAME}.ctl <<EOF
+cat >../output/scenario_ice_sheet.gmean.${FILENAME}.ctl <<EOF
 dset ^scenario_ice_sheet.gmean.${FILENAME}.bin
 undef 9.e27
 xdef 12 linear 0 3.75
